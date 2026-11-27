@@ -94,14 +94,30 @@ jobs:
 
           "installer=$($installer.FullName)" >> $env:GITHUB_OUTPUT
           "version=$version" >> $env:GITHUB_OUTPUT
-          $digest = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash
+          $digest = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $manifest = Join-Path $installer.DirectoryName 'super-booster-update.json'
+          [ordered]@{
+            tag_name = "v$version"
+            draft = $false
+            prerelease = $false
+            assets = @([ordered]@{
+              name = $installer.Name
+              size = $installer.Length
+              state = 'uploaded'
+              digest = "sha256:$digest"
+              browser_download_url = "https://github.com/4ls4mi/super-booster/releases/download/v$version/$($installer.Name)"
+            })
+          } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifest -Encoding utf8
+          "manifest=$manifest" >> $env:GITHUB_OUTPUT
           "Verified $($installer.Name) · SHA-256 $digest" >> $env:GITHUB_STEP_SUMMARY
 
       - name: Upload verified Windows installer
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: SuperBooster-${{ steps.package.outputs.version }}-windows-x64
-          path: ${{ steps.package.outputs.installer }}
+          path: |
+            ${{ steps.package.outputs.installer }}
+            ${{ steps.package.outputs.manifest }}
           compression-level: 0
           if-no-files-found: error
 
