@@ -1,10 +1,15 @@
 #include "layout_verification.h"
 
 #include <QCoreApplication>
+#include <QDeadlineTimer>
 #include <QDebug>
 #include <QEventLoop>
+#include <QFile>
 #include <QGuiApplication>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QMouseEvent>
+#include <QProcess>
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QScreen>
@@ -26,6 +31,16 @@ constexpr auto Playback = "superBoosterPlaybackShard";
 constexpr auto Effects = "superBoosterEffectsShard";
 constexpr auto Meter = "superBoosterMeterShard";
 constexpr auto Grip = "superBoosterResizeGrip";
+constexpr auto ClassicSurface = "superBoosterClassicSurface";
+constexpr auto ClassicView = "superBoosterClassicBoostView";
+constexpr auto MainMenu = "superBoosterMainMenu";
+constexpr auto ClassicMenu = "superBoosterClassicMenu";
+constexpr auto GlassChoice = "superBoosterLayout_glass";
+constexpr auto ClassicChoice = "superBoosterLayout_classic";
+
+bool isClassicLayout(QQuickWindow* window) {
+    return window->property("layoutMode").toString() == QLatin1String("classic");
+}
 
 void settleLayout() {
     QEventLoop events;
@@ -88,10 +103,21 @@ bool clickControl(QQuickWindow* window, const char* name, QQuickItem* hitItem = 
     return true;
 }
 
+bool openAppearanceMenu(QQuickWindow* window) {
+    const auto menuButton = isClassicLayout(window) ? ClassicMenu : MainMenu;
+    if (!window->property("menuOpen").toBool() && !clickControl(window, menuButton)) return false;
+    auto* menu = visualItem(window->contentItem(), QLatin1String(Appearance));
+    if (!menu || !menu->isVisible()) {
+        qWarning() << "The Menu button must reveal Appearance.";
+        return false;
+    }
+    return true;
+}
+
 bool verifyUpdateSettings(QQuickWindow* window) {
-    window->resize(860, 550);
+    window->resize(isClassicLayout(window) ? QSize(560, 430) : QSize(860, 550));
     settleLayout();
-    if (!clickControl(window, "superBoosterMainMenu") ||
+    if (!openAppearanceMenu(window) ||
         !clickControl(window, "superBoosterAppearanceUpdateSettings")) {
         return false;
     }
@@ -134,25 +160,35 @@ bool verifyUpdateSettings(QQuickWindow* window) {
     window->setProperty("activeTab", 0);
     settleLayout();
 
-    return clickControl(window, "superBoosterMainMenu") &&
+    const bool reopened = openAppearanceMenu(window) &&
         clickControl(window, "superBoosterAppearanceSettings") &&
         clickControl(window, "jumpToUpdateSettings") && updateControlsInsideViewport();
+    window->setProperty("activeTab", 0);
+    settleLayout();
+    return reopened;
+}
+
+bool visibleInWindow(QQuickWindow* window, const char* name, QRectF* bounds = nullptr) {
+    auto* item = visualItem(window->contentItem(), QLatin1String(name));
+    if (!item || !item->isVisible()) {
+        qWarning() << "Missing visible layout item:" << name;
+        return false;
+    }
+    const QRectF box = sceneBounds(item);
+    const QRectF windowBounds = QRectF(QPointF{}, window->size()).adjusted(-1, -1, 1, 1);
+    if (box.width() < 18 || box.height() < 18 || !windowBounds.contains(box)) {
+        qWarning() << "Out-of-bounds layout item:" << name << box << window->size();
+        return false;
+    }
+    if (bounds) *bounds = box;
+    return true;
 }
 
 QList<QRectF> visibleSurfaces(QQuickWindow* window) {
     QList<QRectF> bounds;
     for (const auto name : {Brand, Commands, Gain, Playback, Effects, Meter, Grip}) {
-        auto* item = visualItem(window->contentItem(), QLatin1String(name));
-        if (!item || !item->isVisible()) {
-            qWarning() << "Missing visible layout item:" << name;
-            return {};
-        }
-        const QRectF box = sceneBounds(item);
-        if (box.width() < 18 || box.height() < 18 || box.x() < -1 || box.y() < -1 ||
-            box.right() > window->width() + 1 || box.bottom() > window->height() + 1) {
-            qWarning() << "Out-of-bounds layout item:" << name << box << window->size();
-            return {};
-        }
+        QRectF box;
+        if (!visibleInWindow(window, name, &box)) return {};
         bounds.append(box);
     }
     if (bounds[0].height() > window->height() * 0.25 || bounds[2].height() < window->height() * 0.30) {
@@ -161,18 +197,80 @@ QList<QRectF> visibleSurfaces(QQuickWindow* window) {
     }
     return bounds;
 }
+
+bool verifySelectedLayout(QQuickWindow* window, const QString& layout, const QString& material) {
+    if (window->property("layoutMode").toString() != layout || window->property("material").toString() != material) {
+        qWarning() << "Expected layout and material:" << layout << material
+                   << "actual:" << window->property("layoutMode") << window->property("material");
+        return false;
+    }
+    const bool classic = layout == QLatin1String("classic");
+    auto* inactiveItem = visualItem(window->contentItem(), QLatin1String(classic ? Gain : ClassicSurface));
+    if (inactiveItem && inactiveItem->isVisible()) {
+        qWarning() << "The previous layout is still visible:" << inactiveItem->objectName();
+        return false;
+    }
+    if (!classic) return !visibleSurfaces(window).isEmpty();
+
+    for (const auto name : {ClassicSurface, ClassicView, "superBoosterClassicHero",
+                            "superBoosterClassicGain", "superBoosterClassicEffects", "superBoosterClassicMeter",
+                            "superBoosterClassicResizeGrip"}) {
+        if (!visibleInWindow(window, name)) return false;
+    }
+    return true;
 }
 
-int verifyMainLayout(QQuickWindow* window) {
-    window->resize(1000, 615);
+bool verifyLayoutAfterRestart(const QString& settingsPath, const QString& layout) {
+    bool saved = false;
+    QDeadlineTimer saveDeadline(3000);
+    while (!saveDeadline.hasExpired()) {
+        QFile file(settingsPath);
+        if (file.open(QIODevice::ReadOnly) &&
+            QJsonDocument::fromJson(file.readAll()).object().value(QLatin1String("appearance_layout")).toString() == layout) {
+            saved = true;
+            break;
+        }
+        file.close();
+        settleLayout();
+    }
+    if (!saved) {
+        qWarning() << "The selected layout was not saved:" << layout;
+        return false;
+    }
+
+    QProcess restarted;
+    restarted.start(QCoreApplication::applicationFilePath(),
+                    {QStringLiteral("--verify-layout"), QStringLiteral("--verify-settings-file"), settingsPath,
+                     QStringLiteral("--verify-startup-layout"), layout});
+    if (!restarted.waitForFinished(15000) || restarted.exitStatus() != QProcess::NormalExit || restarted.exitCode() != 0) {
+        qWarning() << "Restart did not restore the selected layout:" << layout
+                   << restarted.errorString() << restarted.readAllStandardError();
+        return false;
+    }
+    return true;
+}
+}
+
+int verifyMainLayout(QQuickWindow* window, const QString& settingsPath, const QString& expectedStartupLayout) {
+    if (expectedStartupLayout.isEmpty()) window->resize(1000, 615);
     window->show();
     settleLayout();
     auto* menu = visualItem(window->contentItem(), QLatin1String(Appearance));
-    const auto closedBounds = visibleSurfaces(window);
-    if (!menu || menu->isVisible() || window->property("menuOpen").toBool() || closedBounds.isEmpty()) {
+    if (!menu || menu->isVisible() || window->property("menuOpen").toBool()) {
         qWarning() << "The app must start with a complete layout and the menu closed.";
         return 1;
     }
+    const QString glass = QStringLiteral("glass");
+    const QString classic = QStringLiteral("classic");
+    const QString acrylic = QStringLiteral("acrylic");
+    const QString clear = QStringLiteral("clear");
+    if (!expectedStartupLayout.isEmpty()) {
+        const QString material = expectedStartupLayout == classic ? acrylic : clear;
+        return verifySelectedLayout(window, expectedStartupLayout, material) ? 0 : 1;
+    }
+
+    if (!verifySelectedLayout(window, glass, QStringLiteral("frosted"))) return 1;
+    const auto closedBounds = visibleSurfaces(window);
     auto* updateNotice = window->findChild<QQuickWindow*>(QStringLiteral("superBoosterUpdateNotice"));
     if (!updateNotice) {
         qWarning() << "The update notice is missing.";
@@ -209,5 +307,25 @@ int verifyMainLayout(QQuickWindow* window) {
         qWarning() << "The closed-menu layout must adapt to the new window size.";
         return 1;
     }
-    return verifyUpdateSettings(window) ? 0 : 1;
+    if (!verifyUpdateSettings(window) || !openAppearanceMenu(window) ||
+        !clickControl(window, "superBoosterMaterial_clear") || !verifySelectedLayout(window, glass, clear) ||
+        !openAppearanceMenu(window) || !clickControl(window, ClassicChoice) ||
+        !verifySelectedLayout(window, classic, acrylic) || !verifyLayoutAfterRestart(settingsPath, classic)) {
+        return 1;
+    }
+
+    window->setProperty("menuOpen", false);
+    window->resize(560, 430);
+    settleLayout();
+    if (!verifySelectedLayout(window, classic, acrylic)) return 1;
+
+    window->resize(1180, 700);
+    settleLayout();
+    if (!verifySelectedLayout(window, classic, acrylic) || !verifyUpdateSettings(window) ||
+        !verifySelectedLayout(window, classic, acrylic) || !openAppearanceMenu(window) ||
+        !clickControl(window, GlassChoice) || !verifySelectedLayout(window, glass, clear) ||
+        !verifyLayoutAfterRestart(settingsPath, glass)) {
+        return 1;
+    }
+    return 0;
 }

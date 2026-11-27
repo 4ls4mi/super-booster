@@ -47,11 +47,13 @@ class AppBackend : public QObject {
     Q_PROPERTY(QVariantList spectrumBands READ spectrumBands NOTIFY metersChanged)
     Q_PROPERTY(double masterVolume READ masterVolume NOTIFY masterVolumeChanged)
     Q_PROPERTY(bool startupNoticeVisible READ startupNoticeVisible NOTIFY startupNoticeVisibleChanged)
+    Q_PROPERTY(QString appearanceLayout READ appearanceLayout WRITE setAppearanceLayout NOTIFY appearanceLayoutChanged)
     Q_PROPERTY(QString appearanceMaterial READ appearanceMaterial WRITE setAppearanceMaterial NOTIFY appearanceMaterialChanged)
     Q_PROPERTY(QRect mainWindowWorkArea READ mainWindowWorkArea NOTIFY mainWindowWorkAreaChanged)
 
 public:
-    explicit AppBackend(WinWindowHelper* winHelper, bool screenshotMode, QObject* parent = nullptr);
+    explicit AppBackend(WinWindowHelper* winHelper, bool screenshotMode, QObject* parent = nullptr,
+                        const QString& settingsPath = {});
     ~AppBackend() override;
 
     void setWindows(QQuickWindow* mainWindow, QQuickWindow* popupWindow);
@@ -110,6 +112,8 @@ public:
     QVariantList spectrumBands() const { return m_spectrum; }
     double masterVolume() const { return m_masterVolume; }
     bool startupNoticeVisible() const { return m_startupNoticeVisible; }
+    QString appearanceLayout() const { return m_appearanceLayout; }
+    void setAppearanceLayout(const QString& layout);
     QString appearanceMaterial() const { return m_appearanceMaterial; }
     void setAppearanceMaterial(const QString& material);
     QRect mainWindowWorkArea() const;
@@ -151,6 +155,7 @@ signals:
     void metersChanged();
     void masterVolumeChanged();
     void startupNoticeVisibleChanged();
+    void appearanceLayoutChanged();
     void appearanceMaterialChanged();
     void mainWindowWorkAreaChanged();
     void updateNotificationClicked();
@@ -168,13 +173,14 @@ private:
     void setupTray();
     void updateTrayIcon();
     QIcon buildSpeakerIcon(bool active);
-    QString settingsFilePath() const;
     QString directOutputId() const;
     QString digitalSourceId() const;
     QByteArray masterOutputId() const;
 
     WinWindowHelper* m_winHelper = nullptr;
     bool m_screenshotMode = false;
+    const bool m_readOnlySettings;
+    const QString m_settingsPath;
     WindowsAudioRoute m_windowsRoute;
     QPointer<QQuickWindow> m_mainWindow;
     QPointer<QQuickWindow> m_popupWindow;
@@ -194,6 +200,7 @@ private:
     bool m_showTrayMsg = true;
     bool m_hotkeysEnabled = true;
     bool m_startupNoticeVisible = false;
+    QString m_appearanceLayout = QStringLiteral("glass");
     QString m_appearanceMaterial = QStringLiteral("frosted");
 
     QString m_selectedOutDevice;

@@ -95,6 +95,12 @@ Canvas {
                 ctx.stroke()
             }
             break
+        case "muted":
+            line(ctx, [[2, 9], [6, 9], [11, 5], [11, 19], [6, 15], [2, 15], [2, 9]])
+            ctx.strokeStyle = "#f87171"
+            line(ctx, [[15, 9], [21, 15]])
+            line(ctx, [[21, 9], [15, 15]])
+            break
         case "appearance":
             ctx.strokeRect(2, 3, 20, 14)
             line(ctx, [[12, 17], [12, 22]])

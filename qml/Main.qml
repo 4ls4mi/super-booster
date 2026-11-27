@@ -8,8 +8,8 @@ Window {
     id: mainWin
     width: Math.min(1020, Screen.desktopAvailableWidth)
     height: Math.min(610, Screen.desktopAvailableHeight)
-    minimumWidth: Math.min(860, Screen.desktopAvailableWidth)
-    minimumHeight: Math.min(550, Screen.desktopAvailableHeight)
+    minimumWidth: Math.min(classic ? 560 : 860, Screen.desktopAvailableWidth)
+    minimumHeight: Math.min(classic ? 430 : 550, Screen.desktopAvailableHeight)
     visible: false
     color: "transparent"
     title: "Super Booster"
@@ -17,9 +17,18 @@ Window {
 
     property int activeTab: 0
     property bool menuOpen: screenshotMenuOpen
+    readonly property string layoutMode: screenshotMode && screenshotLayout.length > 0
+        ? screenshotLayout : backend.appearanceLayout
+    readonly property bool classic: layoutMode === "classic"
     readonly property var panelLayout: FractureLayout.arrange(width, height)
-    readonly property string material: screenshotMode && screenshotMaterial.length > 0
+    readonly property string material: classic ? "acrylic" : screenshotMode && screenshotMaterial.length > 0
         ? screenshotMaterial : backend.appearanceMaterial
+    readonly property rect classicBodyBounds: Qt.rect(14, 62, width - 28, height - 104)
+    readonly property var classicPagePane: classicPane(classicBodyBounds, 14)
+    readonly property var classicMenuPane: classicPane(Qt.rect(width - 252, 61, 238, 225), 13)
+    property size glassWindowSize: Qt.size(1020, 610)
+    property size classicWindowSize: Qt.size(680, 500)
+    readonly property bool resizeEnabled: visibility === Window.Windowed
     readonly property color accentColor: backend.volume > 300 ? "#ff9c76" : "#8ffbd0"
     readonly property bool hiddenForUpdate: (!visible || visibility === Window.Minimized)
         && !miniPopup.visible && !updateNotice.detailsVisible
@@ -49,7 +58,8 @@ Window {
     palette.dark: "#211c2d"
 
     function updateShardGeometry() {
-        const surface = [brandShard, commandShard, mixer, settings, appearance].concat(boost.shards)
+        const surface = classic ? [classicSurface]
+            : [brandShard, commandShard, mixer, settings, appearance].concat(boost.shards)
         const polygons = surface.filter(shard => shard.visible && shard.width > 0 && shard.height > 0)
             .map(shard => shard.windowPolygon())
         winHelper.setShardGeometry(polygons)
@@ -57,6 +67,61 @@ Window {
 
     function queueGeometry() {
         Qt.callLater(updateShardGeometry)
+    }
+
+    function roundedPoints(width, height, radius) {
+        if (width <= 2 || height <= 2)
+            return []
+        radius = Math.min(radius, (width - 2) / 2, (height - 2) / 2)
+        const centers = [[width - 2 - radius, radius], [width - 2 - radius, height - 2 - radius],
+                         [radius, height - 2 - radius], [radius, radius]]
+        const points = []
+        for (let corner = 0; corner < centers.length; ++corner) {
+            const center = centers[corner]
+            for (let step = 0; step <= 4; ++step) {
+                const angle = (corner - 1 + step / 4) * Math.PI / 2
+                points.push(Qt.point((center[0] + Math.cos(angle) * radius) / (width - 2),
+                                     (center[1] + Math.sin(angle) * radius) / (height - 2)))
+            }
+        }
+        return points
+    }
+
+    function classicPane(bounds, inset) {
+        return {
+            x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height,
+            points: roundedPoints(bounds.width, bounds.height, 12),
+            content: Qt.rect(inset, inset, bounds.width - 2 * inset, bounds.height - 2 * inset)
+        }
+    }
+
+    function selectLayout(layout) {
+        if (layout === layoutMode)
+            return
+
+        const windowed = visibility === Window.Windowed
+        if (windowed) {
+            const currentSize = Qt.size(width, height)
+            if (classic)
+                classicWindowSize = currentSize
+            else
+                glassWindowSize = currentSize
+        }
+
+        menuOpen = false
+        backend.appearanceLayout = layout
+        if (windowed) Qt.callLater(restoreLayoutSize)
+    }
+
+    function restoreLayoutSize() {
+        if (visibility === Window.Windowed) {
+            const size = classic ? classicWindowSize : glassWindowSize
+            const workArea = backend.mainWindowWorkArea
+            width = Math.min(size.width, workArea.width)
+            height = Math.min(size.height, workArea.height)
+            x = Math.max(workArea.x, Math.min(x, workArea.x + workArea.width - width))
+            y = Math.max(workArea.y, Math.min(y, workArea.y + workArea.height - height))
+        }
     }
 
     function openSettings(showUpdates) {
@@ -70,11 +135,16 @@ Window {
 
     Component.onCompleted: {
         winHelper.titleBarHeight = 0
+        if (classic) {
+            width = Math.min(classicWindowSize.width, Screen.desktopAvailableWidth)
+            height = Math.min(classicWindowSize.height, Screen.desktopAvailableHeight)
+        }
         queueGeometry()
     }
     onVisibleChanged: queueGeometry()
     onActiveTabChanged: queueGeometry()
     onMenuOpenChanged: queueGeometry()
+    onLayoutModeChanged: queueGeometry()
     onWidthChanged: queueGeometry()
     onHeightChanged: queueGeometry()
 
@@ -121,14 +191,25 @@ Window {
     }
 
     component Pane: GlassShard {
+        id: paneSurface
         required property var pane
+        property bool classicCard: false
         x: pane.x
         y: pane.y
         width: pane.width
         height: pane.height
         points: pane.points
         material: mainWin.material
+        paintFace: !classicCard
         onGeometryChanged: mainWin.queueGeometry()
+
+        Rectangle {
+            anchors.fill: parent
+            visible: paneSurface.classicCard
+            radius: 14
+            color: "#50202838"
+            border.color: "#407c9eb0"
+        }
     }
 
     component HeaderButton: ToolButton {
@@ -203,9 +284,262 @@ Window {
         }
     }
 
+    component ClassicHeaderButton: ToolButton {
+        id: control
+
+        property string iconName: ""
+        property bool windowCommand: false
+
+        implicitWidth: iconName.length ? 26 : implicitContentWidth + 14
+        implicitHeight: windowCommand ? 26 : 24
+        horizontalPadding: 7
+        verticalPadding: 3
+        font.pixelSize: 11
+        font.weight: checked ? Font.DemiBold : Font.Normal
+
+        contentItem: Item {
+            implicitWidth: caption.implicitWidth
+
+            Label {
+                id: caption
+                anchors.centerIn: parent
+                text: control.text
+                font: control.font
+                color: control.checked ? "#ffffff" : "#dbeaf3"
+                visible: !control.iconName.length
+            }
+
+            LineIcon {
+                anchors.centerIn: parent
+                width: 14
+                height: 14
+                name: control.iconName
+                color: "#dbeaf3"
+                visible: control.iconName.length > 0
+            }
+        }
+
+        background: Rectangle {
+            radius: 6
+            color: control.iconName === "close" && control.hovered ? "#55ef4444"
+                : control.down || control.checked ? "#42ffffff"
+                : control.hovered ? "#27ffffff" : control.windowCommand ? "#16ffffff" : "transparent"
+            border.color: control.visualFocus ? "#a4e6fa" : "transparent"
+        }
+    }
+
+    GlassShard {
+        id: classicSurface
+        objectName: "superBoosterClassicSurface"
+        anchors.fill: parent
+        visible: mainWin.classic
+        material: mainWin.material
+        points: mainWin.roundedPoints(width, height, 13)
+        onGeometryChanged: mainWin.queueGeometry()
+    }
+
+    RowLayout {
+        id: classicHeader
+        visible: mainWin.classic
+        x: 14
+        y: 14
+        width: mainWin.width - 28
+        height: 36
+        spacing: 8
+
+        Item {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+
+            RowLayout {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 9
+
+                Rectangle {
+                    Layout.preferredWidth: 28
+                    Layout.preferredHeight: 28
+                    radius: 8
+                    color: backend.engineActive ? "#282ecc71" : "#2438bdf8"
+                    border.color: backend.engineActive ? "#602ecc71" : "#5038bdf8"
+
+                    LineIcon {
+                        anchors.centerIn: parent
+                        width: 21
+                        height: 21
+                        name: backend.engineActive ? "output" : "muted"
+                        color: backend.engineActive ? "#2ecc71" : "#a8c5d6"
+                    }
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 0
+
+                    Label {
+                        Layout.fillWidth: true
+                        text: qsTr("SUPER BOOSTER")
+                        color: "#f8fafc"
+                        font.pixelSize: 13
+                        font.weight: Font.Bold
+                        font.letterSpacing: 0.8
+                        elide: Text.ElideRight
+                    }
+                    Label {
+                        Layout.fillWidth: true
+                        text: backend.directMode ? qsTr("SYSTEM AUDIO BOOST") : qsTr("DEVICE ROUTING MODE")
+                        color: "#9bdef9"
+                        font.pixelSize: 9
+                        font.letterSpacing: 0.5
+                        elide: Text.ElideRight
+                    }
+                }
+            }
+
+            DragHandler {
+                target: null
+                onActiveChanged: if (active) winHelper.startSystemMove()
+            }
+            TapHandler { onDoubleTapped: winHelper.toggleMaximize() }
+        }
+
+        Rectangle {
+            Layout.preferredWidth: classicTabs.implicitWidth + 8
+            Layout.preferredHeight: 30
+            radius: 9
+            color: "#22000000"
+            border.color: "#38c2e0ec"
+
+            Row {
+                id: classicTabs
+                anchors.centerIn: parent
+                spacing: 3
+
+                ClassicHeaderButton {
+                    text: qsTr("Boost")
+                    checked: mainWin.activeTab === 0
+                    onClicked: {
+                        mainWin.menuOpen = false
+                        mainWin.activeTab = 0
+                    }
+                }
+                ClassicHeaderButton {
+                    text: qsTr("App Mixer")
+                    checked: mainWin.activeTab === 1
+                    onClicked: {
+                        mainWin.menuOpen = false
+                        mainWin.activeTab = 1
+                    }
+                }
+                ClassicHeaderButton {
+                    text: qsTr("Settings")
+                    checked: mainWin.activeTab === 2
+                    onClicked: mainWin.openSettings(false)
+                }
+            }
+        }
+
+        ClassicHeaderButton {
+            objectName: "superBoosterClassicMenu"
+            text: qsTr("Appearance")
+            windowCommand: true
+            checked: mainWin.menuOpen
+            onClicked: mainWin.menuOpen = !mainWin.menuOpen
+        }
+
+        Row {
+            spacing: 5
+
+            ClassicHeaderButton {
+                iconName: "minimize"
+                windowCommand: true
+                Accessible.name: qsTr("Minimize")
+                onClicked: winHelper.minimizeWindow()
+            }
+            ClassicHeaderButton {
+                iconName: mainWin.visibility === Window.Maximized ? "restore" : "maximize"
+                windowCommand: true
+                Accessible.name: mainWin.visibility === Window.Maximized ? qsTr("Restore") : qsTr("Maximize")
+                onClicked: winHelper.toggleMaximize()
+            }
+            ClassicHeaderButton {
+                iconName: "close"
+                windowCommand: true
+                Accessible.name: qsTr("Hide to tray")
+                onClicked: mainWin.close()
+            }
+        }
+    }
+
+    ClassicBoostView {
+        visible: mainWin.classic && mainWin.activeTab === 0
+        x: mainWin.classicBodyBounds.x
+        y: mainWin.classicBodyBounds.y
+        width: mainWin.classicBodyBounds.width
+        height: mainWin.classicBodyBounds.height
+        audio: backend
+    }
+
+    RowLayout {
+        x: 14
+        y: mainWin.height - 31
+        width: mainWin.width - 28
+        height: 20
+        spacing: 8
+        visible: mainWin.classic
+
+        Rectangle {
+            implicitWidth: 7
+            implicitHeight: 7
+            radius: 4
+            color: backend.engineActive ? "#2ecc71" : "#8daabb"
+        }
+        Label {
+            Layout.fillWidth: true
+            color: "#b4cbd8"
+            text: backend.statusMessage
+            font.pixelSize: 11
+            elide: Text.ElideRight
+        }
+        MouseArea {
+            id: classicGrip
+            objectName: "superBoosterClassicResizeGrip"
+            Layout.preferredWidth: 20
+            Layout.preferredHeight: 20
+            enabled: mainWin.resizeEnabled
+            cursorShape: Qt.SizeFDiagCursor
+
+            property point dragOrigin
+            property size windowSizeAtPress
+
+            onPressed: mouse => {
+                dragOrigin = mapToGlobal(mouse.x, mouse.y)
+                windowSizeAtPress = Qt.size(mainWin.width, mainWin.height)
+            }
+            onPositionChanged: mouse => {
+                if (!pressed)
+                    return
+                const position = mapToGlobal(mouse.x, mouse.y)
+                winHelper.resizeFromGrip(Math.round(windowSizeAtPress.width + position.x - dragOrigin.x),
+                                         Math.round(windowSizeAtPress.height + position.y - dragOrigin.y))
+            }
+
+            LineIcon {
+                anchors.centerIn: parent
+                width: 13
+                height: 13
+                name: "resize"
+                color: "#94b1c0"
+                visible: classicGrip.enabled
+            }
+        }
+    }
+
     Pane {
         id: brandShard
         objectName: "superBoosterBrandShard"
+        visible: !mainWin.classic
         pane: mainWin.panelLayout.brand
 
         RowLayout {
@@ -257,6 +591,7 @@ Window {
     Pane {
         id: commandShard
         objectName: "superBoosterCommandShard"
+        visible: !mainWin.classic
         pane: mainWin.panelLayout.commands
 
         RowLayout {
@@ -296,7 +631,7 @@ Window {
     BoostView {
         id: boost
         anchors.fill: parent
-        visible: mainWin.activeTab === 0
+        visible: !mainWin.classic && mainWin.activeTab === 0
         panelLayout: mainWin.panelLayout
         audio: backend
         material: mainWin.material
@@ -309,7 +644,8 @@ Window {
     Pane {
         id: mixer
         visible: mainWin.activeTab === 1
-        pane: mainWin.panelLayout.pages
+        pane: mainWin.classic ? mainWin.classicPagePane : mainWin.panelLayout.pages
+        classicCard: mainWin.classic
 
         ColumnLayout {
             x: mixer.pane.content.x
@@ -419,7 +755,8 @@ Window {
     Pane {
         id: settings
         visible: mainWin.activeTab === 2
-        pane: mainWin.panelLayout.pages
+        pane: mainWin.classic ? mainWin.classicPagePane : mainWin.panelLayout.pages
+        classicCard: mainWin.classic
 
         ScrollView {
             id: settingsScroll
@@ -811,14 +1148,26 @@ Window {
         }
     }
 
+    MouseArea {
+        z: 1
+        y: mainWin.classicMenuPane.y
+        width: mainWin.width
+        height: mainWin.height - y
+        visible: mainWin.classic && mainWin.menuOpen
+        onClicked: mainWin.menuOpen = false
+    }
+
     AppearanceMenu {
         id: appearance
         objectName: "superBoosterAppearanceShard"
+        z: 2
         visible: mainWin.menuOpen
-        pane: mainWin.panelLayout.appearance
+        pane: mainWin.classic ? mainWin.classicMenuPane : mainWin.panelLayout.appearance
         material: mainWin.material
+        layoutMode: mainWin.layoutMode
         updateService: updater
         onGeometryChanged: mainWin.queueGeometry()
+        onLayoutSelected: layout => mainWin.selectLayout(layout)
         onMaterialSelected: materialId => backend.appearanceMaterial = materialId
         onAudioSettingsRequested: mainWin.openSettings(false)
         onUpdateSettingsRequested: mainWin.openSettings(true)

@@ -8,6 +8,8 @@ GlassShard {
 
     required property var pane
     required property var updateService
+    required property string layoutMode
+    signal layoutSelected(string layout)
     signal materialSelected(string id)
     signal audioSettingsRequested()
     signal updateSettingsRequested()
@@ -24,7 +26,7 @@ GlassShard {
         required property string text
         property int textSize: 17
 
-        spacing: 8
+        spacing: 6
 
         LineIcon {
             name: section.iconName
@@ -44,19 +46,72 @@ GlassShard {
         y: menu.pane.content.y
         width: menu.pane.content.width
         height: menu.pane.content.height
-        spacing: 8
+        spacing: 6
 
         SectionLabel {
             iconName: "appearance"
             text: qsTr("Appearance")
             textSize: 20
-            Layout.bottomMargin: 3
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 5
+
+            Repeater {
+                model: [
+                    { id: "glass", label: qsTr("Glass Panels") },
+                    { id: "classic", label: qsTr("Classic Acrylic") }
+                ]
+
+                Button {
+                    id: layoutChoice
+                    required property var modelData
+
+                    objectName: "superBoosterLayout_" + modelData.id
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 0
+                    Layout.preferredWidth: 1
+                    implicitHeight: 28
+                    text: modelData.label
+                    checked: menu.layoutMode === modelData.id
+                    Accessible.role: Accessible.RadioButton
+                    Accessible.checkable: true
+                    Accessible.checked: checked
+                    onClicked: menu.layoutSelected(modelData.id)
+
+                    contentItem: Label {
+                        text: layoutChoice.text
+                        color: layoutChoice.checked ? "#a9ffe4" : "#f5f0f9"
+                        font.pixelSize: 12
+                        font.weight: layoutChoice.checked ? Font.DemiBold : Font.Normal
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+
+                    background: Rectangle {
+                        radius: 6
+                        color: layoutChoice.checked ? "#48699b99"
+                            : layoutChoice.hovered ? "#40756891" : "#22121224"
+                        border.color: layoutChoice.visualFocus || layoutChoice.checked ? "#a1f7df" : "#656e607d"
+                    }
+                }
+            }
+        }
+
+        Label {
+            visible: menu.layoutMode === "glass"
+            text: qsTr("Material")
+            color: "#e9ddec"
+            font.pixelSize: 12
         }
 
         GridLayout {
+            visible: menu.layoutMode === "glass"
             Layout.fillWidth: true
             columns: 3
-            rowSpacing: 7
+            rowSpacing: 5
             columnSpacing: 7
             uniformCellWidths: true
 
@@ -76,18 +131,18 @@ GlassShard {
 
                     objectName: "superBoosterMaterial_" + modelData.id
                     Layout.fillWidth: true
-                    Layout.preferredHeight: menu.height * 0.16
+                    Layout.preferredHeight: Math.max(39, Math.min(58, menu.height * 0.125))
                     padding: 3
                     text: modelData.label
                     checked: menu.material === modelData.id
                     onClicked: menu.materialSelected(modelData.id)
 
                     contentItem: Column {
-                        spacing: 4
+                        spacing: 2
 
                         Item {
                             anchors.horizontalCenter: parent.horizontalCenter
-                            width: Math.min(choice.width - 12, choice.height * 0.47)
+                            width: Math.min(choice.width - 12, choice.height - 23, 24)
                             height: width
 
                             component Swatch: Rectangle {
@@ -149,7 +204,7 @@ GlassShard {
 
         Rectangle {
             Layout.fillWidth: true
-            Layout.topMargin: 7
+            Layout.topMargin: 3
             implicitHeight: 1
             color: "#65dcd1e5"
         }

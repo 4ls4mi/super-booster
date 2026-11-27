@@ -6,6 +6,7 @@ Item {
     id: shard
 
     property string material: "clear"
+    property bool paintFace: true
     readonly property bool samplesWallpaper: material === "blurred" || material === "acrylic" || material === "mica"
     // Coordinates are fractions of this shard's width and height.
     property var points: [Qt.point(0.025, 0.08), Qt.point(0.15, 0.015), Qt.point(0.65, 0.03),
@@ -33,6 +34,7 @@ Item {
 
     GlassFace {
         anchors.fill: parent
+        visible: shard.paintFace
         material: shard.material
         points: shard.points
         wallpaper: winHelper.wallpaper

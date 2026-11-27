@@ -31,6 +31,10 @@ constexpr auto DIGITAL_SOURCE = "windows-digital";
 constexpr float AUDIBLE_PEAK = 0.0001f;
 constexpr int DIGITAL_HANDOFF_TIMEOUT_MS = 2500;
 
+bool isAppearanceLayout(const QString& layout) {
+    return layout == QLatin1String("glass") || layout == QLatin1String("classic");
+}
+
 bool isAppearanceMaterial(const QString& material) {
     return material == QLatin1String("clear") || material == QLatin1String("acrylic") ||
            material == QLatin1String("mica") || material == QLatin1String("blurred") ||
@@ -38,8 +42,12 @@ bool isAppearanceMaterial(const QString& material) {
 }
 }
 
-AppBackend::AppBackend(WinWindowHelper* winHelper, bool screenshotMode, QObject* parent)
+AppBackend::AppBackend(WinWindowHelper* winHelper, bool screenshotMode, QObject* parent,
+                       const QString& settingsPath)
     : QObject(parent), m_winHelper(winHelper), m_screenshotMode(screenshotMode),
+      m_readOnlySettings(screenshotMode && settingsPath.isEmpty()),
+      m_settingsPath(settingsPath.isEmpty() ? QDir(QCoreApplication::applicationDirPath())
+          .filePath(QStringLiteral("booster_settings.json")) : settingsPath),
       m_windowsRoute(QDir(QCoreApplication::applicationDirPath()).filePath("booster_audio_route.json")) {
     sb_init();
     m_spectrum.reserve(SPECTRUM_COUNT);
@@ -104,9 +112,7 @@ AppBackend::AppBackend(WinWindowHelper* winHelper, bool screenshotMode, QObject*
 }
 
 AppBackend::~AppBackend() {
-    if (!m_screenshotMode) {
-        saveSettings();
-    }
+    saveSettings();
     m_windowsRoute.stop();
     sb_shutdown();
 }
@@ -149,14 +155,10 @@ void AppBackend::watchWorkArea(QScreen* screen) {
     emit mainWindowWorkAreaChanged();
 }
 
-QString AppBackend::settingsFilePath() const {
-    return QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("booster_settings.json"));
-}
-
 void AppBackend::loadSettings() {
     m_autostart = WinWindowHelper::isWindowsAutostartEnabled(QString::fromLatin1(APP_REG_NAME));
 
-    QFile f(settingsFilePath());
+    QFile f(m_settingsPath);
     if (!f.open(QIODevice::ReadOnly)) {
         return;
     }
@@ -176,6 +178,8 @@ void AppBackend::loadSettings() {
     if (m_directMode && !obj.contains("output_selection_saved")) m_selectedOutDevice.clear();
     if (obj.contains("in_device")) m_selectedInDevice = obj.value("in_device").toString();
     m_selectedSourceDevice = obj.value("system_audio_source").toString();
+    const QString layout = obj.value("appearance_layout").toString();
+    if (isAppearanceLayout(layout)) m_appearanceLayout = layout;
     const QString material = obj.value("appearance_material").toString();
     const bool hasSavedAppearance = isAppearanceMaterial(material);
     if (hasSavedAppearance) m_appearanceMaterial = material;
@@ -208,7 +212,7 @@ void AppBackend::loadSettings() {
 }
 
 void AppBackend::saveSettings() {
-    if (m_screenshotMode) return;
+    if (m_readOnlySettings) return;
 
     if (m_mainWindow && m_mainWindow->visibility() == QWindow::Windowed) {
         m_winW = m_mainWindow->width();
@@ -234,10 +238,11 @@ void AppBackend::saveSettings() {
     obj["bass_boost"] = m_bassBoost;
     obj["show_tray_msg"] = m_showTrayMsg;
     obj["hotkeys_enabled"] = m_hotkeysEnabled;
+    obj["appearance_layout"] = m_appearanceLayout;
     obj["appearance_material"] = m_appearanceMaterial;
     obj["window_geometry"] = geom;
 
-    QSaveFile f(settingsFilePath());
+    QSaveFile f(m_settingsPath);
     const QByteArray contents = QJsonDocument(obj).toJson(QJsonDocument::Indented);
     if (f.open(QIODevice::WriteOnly) && f.write(contents) == contents.size()) {
         f.commit();
@@ -327,6 +332,13 @@ void AppBackend::setHotkeysEnabled(bool h) {
         m_winHelper->setHotkeysEnabled(!m_screenshotMode && h);
     }
     emit hotkeysEnabledChanged();
+    m_saveDebounce.start();
+}
+
+void AppBackend::setAppearanceLayout(const QString& layout) {
+    if (m_appearanceLayout == layout || !isAppearanceLayout(layout)) return;
+    m_appearanceLayout = layout;
+    emit appearanceLayoutChanged();
     m_saveDebounce.start();
 }
 

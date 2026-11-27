@@ -17,6 +17,10 @@
 #include <QQuickWindow>
 #include <QSize>
 #include <QTimer>
+#ifdef SUPER_BOOSTER_TEST_LAYOUT
+#include <QTemporaryDir>
+#include <optional>
+#endif
 
 int main(int argc, char* argv[]) {
     QQuickStyle::setStyle(QStringLiteral("Basic"));
@@ -28,12 +32,16 @@ int main(int argc, char* argv[]) {
     app.setWindowIcon(QIcon(QStringLiteral(":/icons/super-booster.ico")));
 
     QString screenshotPath;
+    QString screenshotLayout;
     QString screenshotMaterial;
     QSize screenshotSize;
     bool screenshotMenuOpen = false;
     bool startMinimized = false;
+    QString verificationSettingsPath;
 #ifdef SUPER_BOOSTER_TEST_LAYOUT
     const bool verifyLayout = app.arguments().contains(QStringLiteral("--verify-layout"));
+    QString expectedStartupLayout;
+    std::optional<QTemporaryDir> verificationSettingsDirectory;
 #else
     constexpr bool verifyLayout = false;
 #endif
@@ -45,6 +53,9 @@ int main(int argc, char* argv[]) {
             screenshotPath = args[i].mid(13);
         } else if (args[i] == QLatin1String("--screenshot-menu")) {
             screenshotMenuOpen = true;
+        } else if (args[i] == QLatin1String("--screenshot-layout") && i + 1 < args.size()) {
+            screenshotLayout = args[++i];
+            if (screenshotLayout != QLatin1String("glass") && screenshotLayout != QLatin1String("classic")) return 1;
         } else if (args[i] == QLatin1String("--screenshot-material") && i + 1 < args.size()) {
             screenshotMaterial = args[++i];
         } else if (args[i] == QLatin1String("--screenshot-size") && i + 1 < args.size()) {
@@ -54,14 +65,28 @@ int main(int argc, char* argv[]) {
             if (screenshotSize.isEmpty() || screenshotSize.width() > 4096 || screenshotSize.height() > 4096) return 1;
         } else if (args[i] == QLatin1String("--minimized")) {
             startMinimized = true;
+#ifdef SUPER_BOOSTER_TEST_LAYOUT
+        } else if (verifyLayout && args[i] == QLatin1String("--verify-settings-file") && i + 1 < args.size()) {
+            verificationSettingsPath = args[++i];
+        } else if (verifyLayout && args[i] == QLatin1String("--verify-startup-layout") && i + 1 < args.size()) {
+            expectedStartupLayout = args[++i];
+#endif
         }
     }
+
+#ifdef SUPER_BOOSTER_TEST_LAYOUT
+    if (verifyLayout && verificationSettingsPath.isEmpty()) {
+        verificationSettingsDirectory.emplace();
+        if (!verificationSettingsDirectory->isValid()) return 1;
+        verificationSettingsPath = verificationSettingsDirectory->filePath(QStringLiteral("booster_settings.json"));
+    }
+#endif
 
     const bool screenshotMode = !screenshotPath.isEmpty() || verifyLayout;
     app.setQuitOnLastWindowClosed(screenshotMode);
 
     WinWindowHelper winHelper;
-    AppBackend backend(&winHelper, screenshotMode);
+    AppBackend backend(&winHelper, screenshotMode, nullptr, verificationSettingsPath);
     Updater updater;
     QObject::connect(&updater, &Updater::installReady, &backend, &AppBackend::quitApp);
     QObject::connect(&updater, &Updater::nativeNotificationRequested, &backend, &AppBackend::notifyUpdate);
@@ -73,6 +98,7 @@ int main(int argc, char* argv[]) {
     engine.rootContext()->setContextProperty(QStringLiteral("winHelper"), &winHelper);
     engine.rootContext()->setContextProperty(QStringLiteral("screenshotMode"), screenshotMode);
     engine.rootContext()->setContextProperty(QStringLiteral("screenshotMenuOpen"), screenshotMenuOpen);
+    engine.rootContext()->setContextProperty(QStringLiteral("screenshotLayout"), screenshotMode ? screenshotLayout : QString());
     engine.rootContext()->setContextProperty(QStringLiteral("screenshotMaterial"), screenshotMaterial);
     engine.rootContext()->setContextProperty(QStringLiteral("startMinimized"), startMinimized);
 
@@ -95,7 +121,7 @@ int main(int argc, char* argv[]) {
         if (QGuiApplication::platformName() == QLatin1String("windows")) {
             winHelper.attachWindow(mainWindow, false);
         }
-        return verifyMainLayout(mainWindow);
+        return verifyMainLayout(mainWindow, verificationSettingsPath, expectedStartupLayout);
     }
 #endif
     if (mainWindow) {
