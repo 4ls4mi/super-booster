@@ -24,7 +24,7 @@ if ($output.TrimEnd('\').StartsWith($stage.TrimEnd('\') + '\', [StringComparison
     throw 'Choose an output folder outside the staged application payload.'
 }
 
-foreach ($file in 'super_booster.exe', 'Qt6Core.dll', 'platforms\qwindows.dll') {
+foreach ($file in 'super_booster.exe', 'super_booster_update_helper.exe', 'Qt6Core.dll', 'Qt6WebSockets.dll', 'platforms\qwindows.dll') {
     if (-not (Test-Path -LiteralPath (Join-Path $stage $file) -PathType Leaf)) {
         throw "The staged Windows payload is missing $file. Build the app and run windeployqt first."
     }

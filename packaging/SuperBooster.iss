@@ -55,7 +55,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; Flags: unchecked
 Name: "taskbarhelp"; Description: "{cm:ShowTaskbarPinHelp}"; Flags: unchecked checkedonce
 
 [Files]
-Source: "{#StageDirectory}\*"; DestDir: "{app}"; Excludes: "booster_settings.json,booster_audio_route.json,booster_audio_route.json.lock"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#StageDirectory}\*"; DestDir: "{app}"; Excludes: "booster_settings.json,booster_audio_route.json,booster_audio_route.json.lock,booster_update.ini"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExecutable}"; WorkingDir: "{app}"; Tasks: startmenu
@@ -77,6 +77,7 @@ const
   SettingsFile = 'booster_settings.json';
   RouteFile = 'booster_audio_route.json';
   RouteLockFile = 'booster_audio_route.json.lock';
+  UpdateFile = 'booster_update.ini';
 
 var
   MarkOwnedDirectory, PurgeData: Boolean;
@@ -131,7 +132,8 @@ end;
 
 function IsKnownDataFile(const Name: String): Boolean;
 begin
-  Result := SameText(Name, SettingsFile) or SameText(Name, RouteFile) or SameText(Name, RouteLockFile);
+  Result := SameText(Name, SettingsFile) or SameText(Name, RouteFile) or
+    SameText(Name, RouteLockFile) or SameText(Name, UpdateFile);
 end;
 
 function DirectoryContainsOnlyKnownData(const Dir: String): Boolean;
@@ -212,7 +214,8 @@ begin
   end;
   if FileOrDirExists(PathCombine(Dir, SettingsFile)) or
      FileOrDirExists(PathCombine(Dir, RouteFile)) or
-     FileOrDirExists(PathCombine(Dir, RouteLockFile)) then
+     FileOrDirExists(PathCombine(Dir, RouteLockFile)) or
+     FileOrDirExists(PathCombine(Dir, UpdateFile)) then
     Result := SuppressibleMsgBox(CustomMessage('RemoveSettingsPrompt'), mbConfirmation,
       MB_YESNO or MB_DEFBUTTON2, IDNO) = IDYES;
 end;
@@ -234,13 +237,14 @@ end;
 
 procedure RemoveOwnedAppData(const Dir: String);
 var
-  RemovedSettings, RemovedRoute, RemovedLock: Boolean;
+  RemovedSettings, RemovedRoute, RemovedLock, RemovedUpdate: Boolean;
 begin
   if not DirExists(Dir) then Exit;
   RemovedSettings := RemoveKnownDataFile(Dir, SettingsFile);
   RemovedRoute := RemoveKnownDataFile(Dir, RouteFile);
   RemovedLock := RemoveKnownDataFile(Dir, RouteLockFile);
-  if not RemovedSettings or not RemovedRoute or not RemovedLock then begin
+  RemovedUpdate := RemoveKnownDataFile(Dir, UpdateFile);
+  if not RemovedSettings or not RemovedRoute or not RemovedLock or not RemovedUpdate then begin
     Log('Some Super Booster settings could not be removed safely and were kept.');
     if not UninstallSilent then
       SuppressibleMsgBox(CustomMessage('RemoveSettingsIncomplete'), mbInformation, MB_OK, IDOK);

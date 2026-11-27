@@ -14,6 +14,12 @@ Choose from [78 installer language options](packaging/languages/README.md) and s
 
 Open **Settings → Apps**, select **Super Booster**, and choose **Uninstall**. The uninstaller keeps saved settings by default. Choose the optional cleanup when prompted if you want to delete the saved settings and remove the remaining installation folder when it is empty.
 
+### App updates
+
+Open **Settings → Updates** to check manually, turn off background checks, or choose how updates appear. Choose the in-app status, a corner popup, a Windows notification with a corner popup, or the update details window. Use **Remind me** to defer a notice for an hour or **Dismiss** to hide it for that version. Windows notifications and corner popups are enabled by default.
+
+Super Booster listens for release alerts while it is open, including in the system tray, and checks for missed releases at startup. Open the update details to read the release notes, download the verified installer, and apply it. Setup preserves the installed folder, existing shortcuts, and settings.
+
 ## Audio modes
 
 - **System Audio Boost** captures audio sent to one playback device and plays it through a separate set of headphones or speakers. If **Automatic Digital Output** is available, it can use an enabled, unused digital output as the source. For manual setup, select a separate silent playback source and route the apps you want to boost to it in Windows Volume Mixer.
@@ -25,7 +31,7 @@ Both modes offer gain up to 500%, a soft limiter, and live signal meters and spe
 
 The [Windows installer workflow](../../actions/workflows/windows.yml) compiles the app, runs the audio tests, and verifies the installer on a GitHub-hosted Windows runner. Download the installer artifact from any successful run.
 
-Use PowerShell on 64-bit Windows with Qt 6.8.3 for MinGW, MinGW 13.1, Ninja, CMake 3.21 or newer, and Rust. Adjust the Qt paths if it is installed elsewhere.
+Use PowerShell on 64-bit Windows with Qt 6.8.3 for MinGW (including Qt Shader Tools and Qt WebSockets), MinGW 13.1, Ninja, CMake 3.21 or newer, and Rust. Adjust the Qt paths if it is installed elsewhere.
 
 ```powershell
 rustup target add x86_64-pc-windows-gnu
@@ -51,6 +57,7 @@ From the same PowerShell session, deploy the build into a fresh `dist/app` direc
 ```powershell
 New-Item -ItemType Directory -Path dist/app
 Copy-Item build/super_booster.exe dist/app/
+Copy-Item build/super_booster_update_helper.exe dist/app/
 & "$qt/bin/windeployqt.exe" --release --no-patchqt --no-translations `
   --no-system-d3d-compiler --no-system-dxc-compiler --no-opengl-sw `
   --skip-plugin-types qmltooling,generic --qmldir qml dist/app/super_booster.exe
@@ -58,7 +65,9 @@ Copy-Item build/super_booster.exe dist/app/
   Set-Content dist/app/qt.conf -Encoding ascii
 Copy-Item third-party dist/app/ -Recurse
 ./packaging/Build-Installer.ps1 -StageDirectory dist/app -OutputDirectory dist `
-  -Version 2.0.1 -IsccPath 'C:/path/to/ISCC.exe'
+  -Version 2.0.2 -IsccPath 'C:/path/to/ISCC.exe'
 ```
 
 Qt, MinGW, and Rust dependency notices are in [third-party](third-party/README.md), along with corresponding Qt source links.
+
+The [release notification service](release-push/README.md) documents the GitHub webhook, Cloudflare deployment, and WebSocket message format. Set `SUPER_BOOSTER_PUSH_URL` when configuring CMake if the service hostname changes.

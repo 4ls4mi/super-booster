@@ -676,6 +676,11 @@ void AppBackend::setupTray() {
     connect(openSettingsAct, &QAction::triggered, this, &AppBackend::showMainWindow);
     connect(m_trayToggleAction, &QAction::triggered, this, &AppBackend::toggleEngine);
     connect(quitAct, &QAction::triggered, this, &AppBackend::quitApp);
+    connect(m_trayIcon, &QSystemTrayIcon::messageClicked, this, [this] {
+        if (!m_updateNotificationPending) return;
+        m_updateNotificationPending = false;
+        emit updateNotificationClicked();
+    });
 
     connect(m_trayIcon, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
         if (reason == QSystemTrayIcon::Trigger || reason == QSystemTrayIcon::DoubleClick) {
@@ -686,6 +691,13 @@ void AppBackend::setupTray() {
     m_trayIcon->setContextMenu(menu);
     updateTrayIcon();
     m_trayIcon->show();
+}
+
+void AppBackend::notifyUpdate(const QString& version) {
+    if (!m_trayIcon || !QSystemTrayIcon::supportsMessages()) return;
+    m_updateNotificationPending = true;
+    m_trayIcon->showMessage(tr("Super Booster %1 is available").arg(version),
+        tr("Open the update details to download and install it."), QSystemTrayIcon::Information);
 }
 
 void AppBackend::updateTrayIcon() {
@@ -720,6 +732,7 @@ void AppBackend::hideMainWindow() {
         if (QSystemTrayIcon::isSystemTrayAvailable() && m_trayIcon) {
             m_mainWindow->hide();
             if (m_showTrayMsg && !m_startupNoticeVisible) {
+                m_updateNotificationPending = false;
                 m_trayIcon->showMessage(
                     QStringLiteral("Super Booster"),
                     QStringLiteral("Still boosting in the background. Click the tray icon for quick volume control."),

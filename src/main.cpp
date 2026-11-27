@@ -1,4 +1,5 @@
 #include "app_backend.h"
+#include "updater.h"
 #include "win_window_helper.h"
 
 #include <QApplication>
@@ -24,6 +25,7 @@ int main(int argc, char* argv[]) {
     QQuickStyle::setStyle(QStringLiteral("Basic"));
     QApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("Super Booster"));
+    app.setApplicationVersion(QStringLiteral(SUPER_BOOSTER_VERSION));
     app.setOrganizationName(QStringLiteral("SuperBooster"));
     app.setWindowIcon(QIcon(QStringLiteral(":/icons/super-booster.ico")));
 
@@ -45,9 +47,14 @@ int main(int argc, char* argv[]) {
 
     WinWindowHelper winHelper;
     AppBackend backend(&winHelper, screenshotMode);
+    Updater updater;
+    QObject::connect(&updater, &Updater::installReady, &backend, &AppBackend::quitApp);
+    QObject::connect(&updater, &Updater::nativeNotificationRequested, &backend, &AppBackend::notifyUpdate);
+    QObject::connect(&backend, &AppBackend::updateNotificationClicked, &updater, &Updater::showDetailsRequested);
 
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty(QStringLiteral("backend"), &backend);
+    engine.rootContext()->setContextProperty(QStringLiteral("updater"), &updater);
     engine.rootContext()->setContextProperty(QStringLiteral("winHelper"), &winHelper);
     engine.rootContext()->setContextProperty(QStringLiteral("screenshotMode"), screenshotMode);
     engine.rootContext()->setContextProperty(QStringLiteral("startMinimized"), startMinimized);
@@ -109,6 +116,7 @@ int main(int argc, char* argv[]) {
             if (!startMinimized) {
                 mainWindow->show();
             }
+            updater.start();
         }
     }
 

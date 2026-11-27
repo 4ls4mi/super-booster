@@ -12,6 +12,7 @@ The Qt Project provides corresponding source for Qt 6.8.3 in its [official sourc
 | Qt Declarative | [qtdeclarative 6.8.3](https://download.qt.io/archive/qt/6.8/6.8.3/submodules/qtdeclarative-everywhere-src-6.8.3.tar.xz) | [SBOM](qt/qtdeclarative-6.8.3.spdx) · [binary build revision](https://github.com/qt/qtdeclarative/tree/2ec235a2235a119887683e55787b93f99dc5f12f) |
 | Qt SVG | [qtsvg 6.8.3](https://download.qt.io/archive/qt/6.8/6.8.3/submodules/qtsvg-everywhere-src-6.8.3.tar.xz) | [SBOM](qt/qtsvg-6.8.3.spdx) · [binary build revision](https://github.com/qt/qtsvg/tree/c75099a75e81df35e7347a65e301bbf1011831a5) |
 | Qt Shader Tools | [qtshadertools 6.8.3](https://download.qt.io/archive/qt/6.8/6.8.3/submodules/qtshadertools-everywhere-src-6.8.3.tar.xz) | [SBOM](qt/qtshadertools-6.8.3.spdx) · compiles the application's shaders at build time |
+| Qt WebSockets | [qtwebsockets 6.8.3](https://download.qt.io/archive/qt/6.8/6.8.3/submodules/qtwebsockets-everywhere-src-6.8.3.tar.xz) | [SBOM](qt/qwebsockets-6.8.3.spdx) |
 
 Qt's archives include their license files and source notices. The [Qt 6.8 third-party credits](https://doc.qt.io/qt-6.8/licenses-used-in-qt.html) provide an additional index by module.
 

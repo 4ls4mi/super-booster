@@ -87,6 +87,7 @@ function Test-InstallCycle([bool] $Start, [bool] $Desktop, [bool] $Purge, [bool]
     $exe = Join-Path $installRoot 'super_booster.exe'
     $settings = Join-Path $installRoot 'booster_settings.json'
     $route = Join-Path $installRoot 'booster_audio_route.json'
+    $update = Join-Path $installRoot 'booster_update.ini'
     $otherData = Join-Path $installRoot 'unrelated-user-file.txt'
     $setupLog = Join-Path $folder 'setup.log'
     $uninstallLog = Join-Path $folder 'uninstall.log'
@@ -116,6 +117,7 @@ function Test-InstallCycle([bool] $Start, [bool] $Desktop, [bool] $Purge, [bool]
         Test-Shortcut $desktopLink $Desktop $exe
         Set-Content -LiteralPath $settings -Value '{"qa":true}'
         Set-Content -LiteralPath $route -Value '{"qa":true}'
+        Set-Content -LiteralPath $update -Value '[General]', 'automaticChecks=false'
         if ($KeepUnrelatedFile) { Set-Content -LiteralPath $otherData -Value 'keep' }
     } finally {
         if ($registeredUninstaller -and (Test-Path -LiteralPath $registeredUninstaller -PathType Leaf)) {
@@ -128,7 +130,7 @@ function Test-InstallCycle([bool] $Start, [bool] $Desktop, [bool] $Purge, [bool]
 
     Assert-CleanRegistration
     if (Test-Path -LiteralPath $exe) { throw 'Uninstall left the application executable.' }
-    foreach ($appData in $settings, $route) {
+    foreach ($appData in $settings, $route, $update) {
         if ((Test-Path -LiteralPath $appData) -eq $Purge) {
             Get-Content -LiteralPath $uninstallLog -Tail 18 | Write-Host
             throw 'Uninstall did not honor the app-data choice.'

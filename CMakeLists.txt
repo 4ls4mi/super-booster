@@ -1,12 +1,15 @@
 cmake_minimum_required(VERSION 3.21)
-project(super_booster VERSION 2.0.1 LANGUAGES CXX)
+project(super_booster VERSION 2.0.2 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Widgets Quick Qml QuickControls2 ShaderTools)
+find_package(Qt6 6.8 REQUIRED COMPONENTS Core Gui Widgets Quick Qml QuickControls2 ShaderTools Network WebSockets)
 qt_standard_project_setup(REQUIRES 6.5)
+
+set(SUPER_BOOSTER_PUSH_URL "wss://super-booster-release-push.auralis-updates.workers.dev/events"
+    CACHE STRING "WebSocket used to announce Super Booster releases")
 
 # Locate Cargo for building the Rust audio_core static library
 find_program(CARGO_EXECUTABLE cargo HINTS "$ENV{USERPROFILE}/.cargo/bin" REQUIRED)
@@ -35,6 +38,13 @@ qt_add_executable(super_booster
     src/win_window_helper.cpp
     src/windows_audio_route.cpp
     src/audio_ffi.h
+    src/updater.cpp
+    src/updater.h
+)
+
+target_compile_definitions(super_booster PRIVATE
+    SUPER_BOOSTER_VERSION="${PROJECT_VERSION}"
+    SUPER_BOOSTER_PUSH_URL="${SUPER_BOOSTER_PUSH_URL}"
 )
 
 qt_add_qml_module(super_booster
@@ -45,6 +55,7 @@ qt_add_qml_module(super_booster
         qml/MiniPopup.qml
         qml/GlassCard.qml
         qml/BoostSlider.qml
+        qml/UpdateNotice.qml
 )
 
 qt_add_resources(super_booster "superbooster_icons"
@@ -68,11 +79,18 @@ target_link_libraries(super_booster PRIVATE
     Qt6::Quick
     Qt6::Qml
     Qt6::QuickControls2
+    Qt6::Network
+    Qt6::WebSockets
     audio_core
 )
 
 if(WIN32)
     enable_language(RC)
+    add_executable(super_booster_update_helper WIN32 src/update_helper.cpp)
+    target_link_libraries(super_booster_update_helper PRIVATE advapi32 bcrypt shell32 user32)
+    if(MINGW)
+        target_link_options(super_booster_update_helper PRIVATE -municode -static -static-libgcc -static-libstdc++)
+    endif()
     target_sources(super_booster PRIVATE assets/super-booster.rc)
     target_include_directories(super_booster PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/assets")
     set_source_files_properties(assets/super-booster.rc PROPERTIES

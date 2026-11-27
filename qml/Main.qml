@@ -43,6 +43,12 @@ Window {
         id: miniPopup
     }
 
+    UpdateNotice {
+        id: updateNotice
+        anchorWindow: mainWin
+        service: updater
+    }
+
     Connections {
         target: backend
         function onAudioSetupRequested() {
@@ -772,11 +778,24 @@ Window {
                     width: parent.width
                     spacing: 12
 
-                    Text {
-                        text: "Audio Engine & Device Setup"
-                        color: "#f8fafc"
-                        font.pixelSize: 14
-                        font.weight: Font.Bold
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            Layout.fillWidth: true
+                            text: "Audio Engine & Device Setup"
+                            color: "#f8fafc"
+                            font.pixelSize: 14
+                            font.weight: Font.Bold
+                        }
+                        Button {
+                            objectName: "jumpToUpdateSettings"
+                            text: qsTr("Updates")
+                            onClicked: {
+                                const view = settingsScroll.contentItem
+                                view.contentY = Math.min(updateSettings.y,
+                                                         Math.max(0, view.contentHeight - view.height))
+                            }
+                        }
                     }
 
                     Text {
@@ -997,6 +1016,80 @@ Window {
                         Button {
                             text: "Quit Completely"
                             onClicked: backend.quitApp()
+                        }
+                    }
+
+                    Rectangle { Layout.fillWidth: true; height: 1; color: "#20ffffff" }
+
+                    ColumnLayout {
+                        id: updateSettings
+                        objectName: "superBoosterUpdateSettings"
+                        Layout.fillWidth: true
+                        spacing: 9
+
+                        Text {
+                            text: qsTr("Updates")
+                            color: "#f8fafc"
+                            font.pixelSize: 14
+                            font.weight: Font.Bold
+                        }
+                        Label {
+                            Layout.fillWidth: true
+                            text: qsTr("Installed version %1 · %2").arg(updater.currentVersion).arg(updateNotice.statusText)
+                            color: "#a7b8ce"
+                            wrapMode: Text.WordWrap
+                            font.pixelSize: 12
+                        }
+                        CheckBox {
+                            objectName: "superBoosterAutomaticUpdateChecks"
+                            enabled: updater.supported
+                            checked: updater.automatic
+                            text: qsTr("Check for updates automatically")
+                            palette.windowText: "#e2e8f0"
+                            onToggled: updater.automatic = checked
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+
+                            Label {
+                                text: qsTr("Notify me using")
+                                color: "#cbd5e1"
+                            }
+                            ComboBox {
+                                objectName: "superBoosterUpdateNotificationMode"
+                                Layout.fillWidth: true
+                                enabled: updater.supported && updater.automatic
+                                textRole: "label"
+                                valueRole: "id"
+                                model: [
+                                    { label: qsTr("Quiet · check without a notification"), id: "quiet" },
+                                    { label: qsTr("Corner popup"), id: "toast" },
+                                    { label: qsTr("Windows notification and corner popup"), id: "notify" },
+                                    { label: qsTr("Update details window"), id: "dialog" }
+                                ]
+                                currentIndex: Math.max(0, indexOfValue(updater.notificationMode))
+                                onActivated: updater.notificationMode = currentValue
+                            }
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Button {
+                                objectName: "checkForSuperBoosterUpdates"
+                                text: qsTr("Check now")
+                                enabled: updater.supported && !updateNotice.busy
+                                onClicked: updateNotice.checkNow()
+                            }
+                            Button {
+                                objectName: "openSuperBoosterUpdateDetails"
+                                text: updateNotice.busy ? qsTr("View progress") : qsTr("Details")
+                                enabled: updater.supported
+                                onClicked: updateNotice.showDetails()
+                            }
+                            Button {
+                                text: qsTr("GitHub releases")
+                                onClicked: updateNotice.openReleases()
+                            }
                         }
                     }
                 }

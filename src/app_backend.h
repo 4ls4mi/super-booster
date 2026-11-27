@@ -118,6 +118,7 @@ public:
     Q_INVOKABLE void hideMainWindow();
     Q_INVOKABLE void togglePopup();
     Q_INVOKABLE void quitApp();
+    void notifyUpdate(const QString& version);
 
 signals:
     void volumeChanged();
@@ -141,6 +142,7 @@ signals:
     void metersChanged();
     void masterVolumeChanged();
     void startupNoticeVisibleChanged();
+    void updateNotificationClicked();
 
 private slots:
     void pollMeters();
@@ -165,6 +167,7 @@ private:
     QPointer<QQuickWindow> m_mainWindow;
     QPointer<QQuickWindow> m_popupWindow;
     QSystemTrayIcon* m_trayIcon = nullptr;
+    bool m_updateNotificationPending = false;
     QAction* m_trayToggleAction = nullptr;
 
     double m_volume = 100.0;
