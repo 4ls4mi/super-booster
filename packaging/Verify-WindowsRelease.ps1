@@ -65,8 +65,22 @@ function Assert-CleanRegistration {
     }
 }
 
+function Wait-UninstallCompletion([string] $LogPath) {
+    # The initial Inno process exits before the child runs the cleanup callback.
+    for ($i = 0; $i -lt 100; $i++) {
+        if ((Test-Path -LiteralPath $LogPath) -and
+            (Select-String -LiteralPath $LogPath -SimpleMatch 'Super Booster uninstall completed.' -Quiet)) {
+            return
+        }
+        Start-Sleep -Milliseconds 200
+    }
+    if (Test-Path -LiteralPath $LogPath) { Get-Content -LiteralPath $LogPath -Tail 12 | Write-Host }
+    throw 'The second phase of uninstall did not finish.'
+}
+
 function Test-InstallCycle([bool] $Start, [bool] $Desktop, [bool] $Purge, [bool] $KeepUnrelatedFile) {
     Assert-CleanRegistration
+    Write-Host "Verifying Start menu=$Start, desktop=$Desktop, cleanup=$Purge, unrelated file=$KeepUnrelatedFile"
     $folder = Join-Path $TempBase ('verify-' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $folder | Out-Null
     $installRoot = Join-Path $folder $application
@@ -108,13 +122,17 @@ function Test-InstallCycle([bool] $Start, [bool] $Desktop, [bool] $Purge, [bool]
             $options = $silent + @(('/LOG="{0}"' -f $uninstallLog))
             if ($Purge) { $options += '/PURGEDATA' }
             Invoke-Installer $registeredUninstaller $options
+            Wait-UninstallCompletion $uninstallLog
         }
     }
 
     Assert-CleanRegistration
     if (Test-Path -LiteralPath $exe) { throw 'Uninstall left the application executable.' }
     foreach ($appData in $settings, $route) {
-        if ((Test-Path -LiteralPath $appData) -eq $Purge) { throw 'Uninstall did not honor the app-data choice.' }
+        if ((Test-Path -LiteralPath $appData) -eq $Purge) {
+            Get-Content -LiteralPath $uninstallLog -Tail 18 | Write-Host
+            throw 'Uninstall did not honor the app-data choice.'
+        }
     }
     if ($KeepUnrelatedFile -and ((Get-Content -LiteralPath $otherData -Raw).Trim() -cne 'keep')) {
         throw 'Optional cleanup did not preserve unrelated files.'

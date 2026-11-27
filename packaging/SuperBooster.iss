@@ -256,6 +256,8 @@ begin
   Dir := ExpandConstant('{app}');
   if CurUninstallStep = usUninstall then
     PurgeData := ShouldPurgeData(Dir);
+  if CurUninstallStep = usDone then
+    Log('Super Booster uninstall completed.');
   if CurUninstallStep <> usPostUninstall then Exit;
 
   if RegQueryStringValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run',
