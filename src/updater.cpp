@@ -16,6 +16,7 @@
 
 namespace {
 const QUrl ReleaseApi(QStringLiteral("https://api.github.com/repos/4ls4mi/super-booster/releases/latest"));
+const QUrl ReleaseManifest(QStringLiteral("https://github.com/4ls4mi/super-booster/releases/latest/download/super-booster-update.json"));
 const QUrl PushUrl(QStringLiteral(SUPER_BOOSTER_PUSH_URL));
 constexpr int MaxMetadata = 512 * 1024;
 constexpr qint64 MaxInstaller = 256 * 1024 * 1024;
@@ -36,6 +37,14 @@ bool httpsUrl(const QUrl& url) {
 
 bool validDownloadUrl(const QUrl& url, const QUrl& initial) {
     return httpsUrl(url) && (url == initial || url.host() == QStringLiteral("release-assets.githubusercontent.com"));
+}
+
+bool validManifestRedirect(const QUrl& url) {
+    if (!httpsUrl(url)) return false;
+    if (url.host() == QStringLiteral("release-assets.githubusercontent.com")) return true;
+    static const QRegularExpression path(QStringLiteral(
+        "^/4ls4mi/super-booster/releases/download/v[0-9]+\\.[0-9]+\\.[0-9]+/super-booster-update\\.json$"));
+    return url.host() == QStringLiteral("github.com") && !url.hasQuery() && path.match(url.path()).hasMatch();
 }
 
 QNetworkRequest requestFor(const QUrl& url) {
@@ -205,9 +214,15 @@ void Updater::checkRelease(bool manual) {
     if (!m_started || !supported() || (!manual && !automatic()) || m_checkReply || busy()) return;
     m_lastCheck.start();
     if (manual || (version().isEmpty() && m_state != QStringLiteral("current"))) setState(QStringLiteral("checking"));
-    auto request = requestFor(ReleaseApi);
-    request.setRawHeader("Accept", "application/vnd.github+json");
-    request.setRawHeader("X-GitHub-Api-Version", "2022-11-28");
+    requestRelease(ReleaseApi, manual, false);
+}
+
+void Updater::requestRelease(const QUrl& url, bool manual, bool fallback, int redirects) {
+    auto request = requestFor(url);
+    if (!fallback) {
+        request.setRawHeader("Accept", "application/vnd.github+json");
+        request.setRawHeader("X-GitHub-Api-Version", "2022-11-28");
+    }
     auto* reply = m_network.get(request);
     m_checkReply = reply;
     auto bytes = std::make_shared<QByteArray>();
@@ -217,16 +232,28 @@ void Updater::checkRelease(bool manual) {
         if (bytes->size() > MaxMetadata) reply->abort();
     };
     connect(reply, &QNetworkReply::readyRead, this, read);
-    connect(reply, &QNetworkReply::finished, this, [this, reply, bytes, read, manual] {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, bytes, read, manual, fallback, url, redirects] {
         m_checkReply = nullptr;
         reply->deleteLater();
         bool valid = false;
         Release next;
-        if (reply->error() == QNetworkReply::NoError && reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 200) {
+        const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        if (fallback && reply->error() == QNetworkReply::NoError && status >= 300 && status < 400 && redirects < 3) {
+            const auto target = url.resolved(reply->attribute(QNetworkRequest::RedirectionTargetAttribute).toUrl());
+            if (validManifestRedirect(target)) {
+                requestRelease(target, manual, true, redirects + 1);
+                return;
+            }
+        }
+        if (reply->error() == QNetworkReply::NoError && status == 200) {
             read();
             if (bytes->size() <= MaxMetadata) next = parseRelease(*bytes, currentVersion(), valid);
         }
         if (!valid) {
+            if (!fallback && (manual || automatic())) {
+                requestRelease(ReleaseManifest, manual, true);
+                return;
+            }
             if (manual) setState(QStringLiteral("error"), tr("Could not verify the latest release on GitHub. Try again or open the releases page."));
             else if (m_state == QStringLiteral("checking")) setState(QStringLiteral("idle"));
             return;

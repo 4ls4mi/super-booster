@@ -71,6 +71,7 @@ private:
     void reconnectPush();
     void acceptHint(const QString& text);
     void checkRelease(bool manual);
+    void requestRelease(const QUrl& url, bool manual, bool fallback, int redirects = 0);
     static Release parseRelease(const QByteArray& payload, const QString& installed, bool& valid);
     void offerRelease();
     void scheduleReminder();

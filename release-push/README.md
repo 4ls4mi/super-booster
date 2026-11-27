@@ -8,7 +8,7 @@ The public WebSocket is `wss://<deployed-worker-host>/events`. Each text message
 {"type":"release","version":"2.0.2"}
 ```
 
-The app uses the hint to check its own GitHub releases and verifies the Windows installer's SHA-256 and size against GitHub's release metadata. The app can also check GitHub when the WebSocket is unavailable. The Worker only supplies the version hint.
+The app uses the hint to check its own GitHub releases and verifies the Windows installer's SHA-256 and size against GitHub's release metadata. If the API is unavailable, it uses the `super-booster-update.json` asset attached to the GitHub release. The app can also check GitHub when the WebSocket is unavailable. The Worker only supplies the version hint.
 
 ## Deploy
 

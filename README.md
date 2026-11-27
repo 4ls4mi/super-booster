@@ -71,3 +71,5 @@ Copy-Item third-party dist/app/ -Recurse
 Qt, MinGW, and Rust dependency notices are in [third-party](third-party/README.md), along with corresponding Qt source links.
 
 The [release notification service](release-push/README.md) documents the GitHub webhook, Cloudflare deployment, and WebSocket message format. Set `SUPER_BOOSTER_PUSH_URL` when configuring CMake if the service hostname changes.
+
+For each stable release, use the `v<version>` tag and attach both the Windows setup executable and `super-booster-update.json` from the successful Actions artifact before publishing. The manifest lets the app verify the installer even when GitHub’s public API is rate-limited. A `body` field containing the release notes is optional.
