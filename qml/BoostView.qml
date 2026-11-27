@@ -352,21 +352,24 @@ Item {
                 }
             }
             Repeater {
-                model: [{ label: "L", peak: view.audio.outputPeakL }, { label: "R", peak: view.audio.outputPeakR }]
+                model: ["L", "R"]
                 RowLayout {
-                    required property var modelData
+                    id: peakRow
+                    required property int index
+                    required property string modelData
+                    readonly property real peak: index === 0 ? view.audio.outputPeakL : view.audio.outputPeakR
                     Layout.fillWidth: true
-                    Label { text: modelData.label; color: "#d4f3ee"; font.pixelSize: 10 }
+                    Label { text: peakRow.modelData; color: "#d4f3ee"; font.pixelSize: 10 }
                     Rectangle {
                         Layout.fillWidth: true
                         height: 6
                         radius: 3
                         color: "#527997a4"
                         Rectangle {
-                            width: parent.width * Math.min(1, modelData.peak)
+                            width: parent.width * Math.min(1, peakRow.peak)
                             height: parent.height
                             radius: 3
-                            color: modelData.peak > 0.9 ? "#fbac70" : view.accent
+                            color: peakRow.peak > 0.9 ? "#fbac70" : view.accent
                         }
                     }
                 }
