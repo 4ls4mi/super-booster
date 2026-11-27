@@ -6,7 +6,13 @@ Super Booster is a Windows desktop audio utility for amplifying and routing audi
 
 ## Install on Windows
 
-Download `SuperBooster-2.0.0-windows-x64-setup.exe` from the [latest release](../../releases/latest), run it, and open **Super Booster** from the Start menu. The unsigned installer is for Windows 10 or 11 on x64 and installs for the current user.
+Download the `SuperBooster-*-windows-x64-setup.exe` installer from the [latest release](../../releases/latest) and run it. Setup supports Windows 10 or 11 on x64 and installs for the current account.
+
+Choose from [78 installer language options](packaging/languages/README.md) and select the shortcuts you want in the Start menu or on the desktop. Setup can open **Super Booster** for you to pin. Right-click its taskbar icon and choose **Pin to taskbar**.
+
+### Uninstall
+
+Open **Settings → Apps**, select **Super Booster**, and choose **Uninstall**. The uninstaller keeps saved settings by default. Choose the optional cleanup when prompted if you want to delete the saved settings and remove the remaining installation folder when it is empty.
 
 ## Audio modes
 
@@ -16,6 +22,8 @@ Download `SuperBooster-2.0.0-windows-x64-setup.exe` from the [latest release](..
 Both modes offer gain up to 500%, a soft limiter, and live signal meters and spectrum. The tray menu gives quick access to the gain slider. Settings include optional Windows startup and global hotkeys for raising gain, lowering gain, and toggling boost.
 
 ## Build from source
+
+The [Windows installer workflow](../../actions/workflows/windows.yml) compiles the app, runs the audio tests, and verifies the installer on a GitHub-hosted Windows runner. Download the installer artifact from any successful run.
 
 Use PowerShell on 64-bit Windows with Qt 6.8.3 for MinGW, MinGW 13.1, Ninja, CMake 3.21 or newer, and Rust. Adjust the Qt paths if it is installed elsewhere.
 
@@ -50,7 +58,7 @@ Copy-Item build/super_booster.exe dist/app/
   Set-Content dist/app/qt.conf -Encoding ascii
 Copy-Item third-party dist/app/ -Recurse
 ./packaging/Build-Installer.ps1 -StageDirectory dist/app -OutputDirectory dist `
-  -Version 2.0.0 -IsccPath 'C:/path/to/ISCC.exe'
+  -Version 2.0.1 -IsccPath 'C:/path/to/ISCC.exe'
 ```
 
 Qt, MinGW, and Rust dependency notices are in [third-party](third-party/README.md), along with corresponding Qt source links.

@@ -1,0 +1,96 @@
+[Languages]
+; Message files bundled with Inno Setup 7.1.1.
+Name: "en"; MessagesFile: "compiler:Default.isl"
+Name: "ar"; MessagesFile: "compiler:Languages\Arabic.isl"
+Name: "hy"; MessagesFile: "compiler:Languages\Armenian.isl"
+Name: "pt_BR"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
+Name: "bg"; MessagesFile: "compiler:Languages\Bulgarian.isl"
+Name: "ca"; MessagesFile: "compiler:Languages\Catalan.isl"
+Name: "zh_CN"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+Name: "zh_TW"; MessagesFile: "compiler:Languages\ChineseTraditional.isl"
+Name: "co"; MessagesFile: "compiler:Languages\Corsican.isl"
+Name: "cs"; MessagesFile: "compiler:Languages\Czech.isl"
+Name: "da"; MessagesFile: "compiler:Languages\Danish.isl"
+Name: "nl"; MessagesFile: "compiler:Languages\Dutch.isl"
+Name: "fi"; MessagesFile: "compiler:Languages\Finnish.isl"
+Name: "fr"; MessagesFile: "compiler:Languages\French.isl"
+Name: "de"; MessagesFile: "compiler:Languages\German.isl"
+Name: "he"; MessagesFile: "compiler:Languages\Hebrew.isl"
+Name: "hu"; MessagesFile: "compiler:Languages\Hungarian.isl"
+Name: "is"; MessagesFile: "compiler:Languages\Icelandic.isl"
+Name: "it"; MessagesFile: "compiler:Languages\Italian.isl"
+Name: "ja"; MessagesFile: "compiler:Languages\Japanese.isl"
+Name: "ko"; MessagesFile: "compiler:Languages\Korean.isl"
+Name: "lt"; MessagesFile: "compiler:Languages\Lithuanian.isl"
+Name: "nb"; MessagesFile: "compiler:Languages\Norwegian.isl"
+Name: "pl"; MessagesFile: "compiler:Languages\Polish.isl"
+Name: "pt_PT"; MessagesFile: "compiler:Languages\Portuguese.isl"
+Name: "ru"; MessagesFile: "compiler:Languages\Russian.isl"
+Name: "sk"; MessagesFile: "compiler:Languages\Slovak.isl"
+Name: "sl"; MessagesFile: "compiler:Languages\Slovenian.isl"
+Name: "es"; MessagesFile: "compiler:Languages\Spanish.isl"
+Name: "sv"; MessagesFile: "compiler:Languages\Swedish.isl"
+Name: "ta"; MessagesFile: "compiler:Languages\Tamil.isl"
+Name: "th"; MessagesFile: "compiler:Languages\Thai.isl"
+Name: "tr"; MessagesFile: "compiler:Languages\Turkish.isl"
+Name: "uk"; MessagesFile: "compiler:Languages\Ukrainian.isl"
+
+; Upstream message files sourced from Inno Setup's is-7_1_1 tag.
+Name: "ab"; MessagesFile: "languages\Abkhazian.isl"
+Name: "af"; MessagesFile: "languages\Afrikaans.isl"
+Name: "sq"; MessagesFile: "languages\Albanian.isl"
+Name: "ast"; MessagesFile: "languages\Asturian.isl"
+Name: "az"; MessagesFile: "languages\Azerbaijan.isl"
+Name: "eu"; MessagesFile: "languages\Basque.isl"
+Name: "be"; MessagesFile: "languages\Belarusian.isl"
+Name: "bn"; MessagesFile: "languages\Bengali.isl"
+Name: "bs"; MessagesFile: "languages\Bosnian.isl"
+Name: "hr"; MessagesFile: "languages\Croatian.isl"
+Name: "en_GB"; MessagesFile: "languages\EnglishBritish.isl"
+Name: "eo"; MessagesFile: "languages\Esperanto.isl"
+Name: "et"; MessagesFile: "languages\Estonian.isl"
+Name: "ee"; MessagesFile: "languages\Ewe.isl"
+Name: "fa"; MessagesFile: "languages\Farsi.isl"
+Name: "gl"; MessagesFile: "languages\Galician.isl"
+Name: "ka"; MessagesFile: "languages\Georgian.isl"
+Name: "el"; MessagesFile: "languages\Greek.isl"
+Name: "hi"; MessagesFile: "languages\Hindi.isl"
+Name: "id"; MessagesFile: "languages\Indonesian.isl"
+Name: "kk"; MessagesFile: "languages\Kazakh.isl"
+Name: "ku_Latn"; MessagesFile: "languages\Kurdish.isl"
+Name: "lv"; MessagesFile: "languages\Latvian.isl"
+Name: "lij"; MessagesFile: "languages\Ligurian.isl"
+Name: "lb"; MessagesFile: "languages\Luxemburgish.isl"
+Name: "mk"; MessagesFile: "languages\Macedonian.isl"
+Name: "ms"; MessagesFile: "languages\Malaysian.isl"
+Name: "mr"; MessagesFile: "languages\Marathi.isl"
+Name: "mn"; MessagesFile: "languages\Mongolian.isl"
+Name: "cnr"; MessagesFile: "languages\Montenegrin.isl"
+Name: "ne"; MessagesFile: "languages\Nepali.isl"
+Name: "nn"; MessagesFile: "languages\NorwegianNynorsk.isl"
+Name: "oc"; MessagesFile: "languages\Occitan.isl"
+Name: "ro"; MessagesFile: "languages\Romanian.isl"
+Name: "gd"; MessagesFile: "languages\ScottishGaelic.isl"
+Name: "sr_Cyrl"; MessagesFile: "languages\SerbianCyrillic.isl"
+Name: "sr_Latn"; MessagesFile: "languages\SerbianLatin.isl"
+Name: "si"; MessagesFile: "languages\Sinhala.isl"
+Name: "tt"; MessagesFile: "languages\Tatar.isl"
+Name: "ur"; MessagesFile: "languages\Urdu.isl"
+Name: "ug"; MessagesFile: "languages\Uyghur.isl"
+Name: "uz"; MessagesFile: "languages\Uzbek.isl"
+Name: "ca_valencia"; MessagesFile: "languages\Valencian.isl"
+Name: "vi"; MessagesFile: "languages\Vietnamese.isl"
+
+[CustomMessages]
+ar.ShowTaskbarPinHelp=افتح التطبيق حتى أتمكن من تثبيته على شريط المهام
+ar.TaskbarPinHelp=انقر بزر الماوس الأيمن فوق أيقونة التطبيق قيد التشغيل في شريط مهام Windows، ثم اختر «تثبيت على شريط المهام».
+fr.ShowTaskbarPinHelp=Ouvrir l’application pour pouvoir l’épingler à la barre des tâches
+fr.TaskbarPinHelp=Cliquez avec le bouton droit sur l’icône de l’application ouverte dans la barre des tâches de Windows, puis choisissez « Épingler à la barre des tâches ».
+de.ShowTaskbarPinHelp=Die App öffnen, damit ich sie an die Taskleiste anheften kann
+de.TaskbarPinHelp=Klicken Sie mit der rechten Maustaste auf das Symbol der geöffneten App in der Windows-Taskleiste und wählen Sie „An Taskleiste anheften“.
+es.ShowTaskbarPinHelp=Abrir la aplicación para poder anclarla a la barra de tareas
+es.TaskbarPinHelp=Haga clic con el botón derecho en el icono de la aplicación abierta en la barra de tareas de Windows y elija «Anclar a la barra de tareas».
+ja.ShowTaskbarPinHelp=タスク バーにピン留めできるようにアプリを開く
+ja.TaskbarPinHelp=Windows のタスク バーで実行中のアプリのアイコンを右クリックし、［タスク バーにピン留めする］を選択してください。
+zh_CN.ShowTaskbarPinHelp=打开应用，以便将其固定到任务栏
+zh_CN.TaskbarPinHelp=右键单击 Windows 任务栏中正在运行的应用图标，然后选择“固定到任务栏”。

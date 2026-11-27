@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(super_booster VERSION 2.0 LANGUAGES CXX)
+project(super_booster VERSION 2.0.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -47,6 +47,12 @@ qt_add_qml_module(super_booster
         qml/BoostSlider.qml
 )
 
+qt_add_resources(super_booster "superbooster_icons"
+    PREFIX "/icons"
+    BASE assets
+    FILES assets/super-booster.ico
+)
+
 qt_add_shaders(super_booster "superbooster_shaders"
     PREFIX "/"
     FILES
@@ -66,6 +72,11 @@ target_link_libraries(super_booster PRIVATE
 )
 
 if(WIN32)
+    enable_language(RC)
+    target_sources(super_booster PRIVATE assets/super-booster.rc)
+    target_include_directories(super_booster PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/assets")
+    set_source_files_properties(assets/super-booster.rc PROPERTIES
+        OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/super-booster.ico")
     target_link_libraries(super_booster PRIVATE
         dwmapi
         advapi32

@@ -5,6 +5,7 @@
 #include <QDir>
 #include <QSaveFile>
 #include <QFileInfo>
+#include <QIcon>
 #include <QImage>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -24,6 +25,7 @@ int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("Super Booster"));
     app.setOrganizationName(QStringLiteral("SuperBooster"));
+    app.setWindowIcon(QIcon(QStringLiteral(":/icons/super-booster.ico")));
 
     QString screenshotPath;
     bool startMinimized = false;
