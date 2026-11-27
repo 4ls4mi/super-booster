@@ -1,0 +1,10 @@
+/build/
+/dist/
+/target/
+/audio_core/target/
+/*.exe
+/*.dll
+/booster_settings.json
+/booster_audio_route.json
+/booster_audio_route.json.lock
+/.reference-bytecode/

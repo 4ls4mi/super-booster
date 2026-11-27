@@ -1,0 +1,56 @@
+# Super Booster
+
+Super Booster is a Windows desktop audio utility for amplifying and routing audio. It uses Windows Audio Session API (WASAPI) for capture and playback, a Rust audio engine for signal processing, and Qt Quick for the interface.
+
+![Super Booster showing its gain controls, signal meters, and spectrum](docs/screenshot.png)
+
+## Install on Windows
+
+Download `SuperBooster-2.0.0-windows-x64-setup.exe` from the [latest release](../../releases/latest), run it, and open **Super Booster** from the Start menu. The unsigned installer is for Windows 10 or 11 on x64 and installs for the current user.
+
+## Audio modes
+
+- **System Audio Boost** captures audio sent to one playback device and plays it through a separate set of headphones or speakers. If **Automatic Digital Output** is available, it can use an enabled, unused digital output as the source. For manual setup, select a separate silent playback source and route the apps you want to boost to it in Windows Volume Mixer.
+- **Device Routing** processes audio from a selected recording input and plays it on a selected output.
+
+Both modes offer gain up to 500%, a soft limiter, and live signal meters and spectrum. The tray menu gives quick access to the gain slider. Settings include optional Windows startup and global hotkeys for raising gain, lowering gain, and toggling boost.
+
+## Build from source
+
+Use PowerShell on 64-bit Windows with Qt 6.8.3 for MinGW, MinGW 13.1, Ninja, CMake 3.21 or newer, and Rust. Adjust the Qt paths if it is installed elsewhere.
+
+```powershell
+rustup target add x86_64-pc-windows-gnu
+$qt = 'C:/Qt/6.8.3/mingw_64'
+$mingw = 'C:/Qt/Tools/mingw1310_64/bin'
+$ninja = 'C:/Qt/Tools/Ninja/ninja.exe'
+$cmake = 'C:/Qt/Tools/CMake_64/bin/cmake.exe'
+$env:Path = "$mingw;$qt/bin;$env:Path"
+
+& $cmake -S . -B build -G Ninja `
+  -DCMAKE_BUILD_TYPE=Release `
+  "-DCMAKE_PREFIX_PATH=$qt" `
+  "-DCMAKE_CXX_COMPILER=$mingw/g++.exe" `
+  "-DCMAKE_MAKE_PROGRAM=$ninja"
+& $cmake --build build
+cargo test --locked --target x86_64-pc-windows-gnu --manifest-path audio_core/Cargo.toml
+```
+
+### Package the installer
+
+From the same PowerShell session, deploy the build into a fresh `dist/app` directory. Use Inno Setup 7.1.1 to compile the installer.
+
+```powershell
+New-Item -ItemType Directory -Path dist/app
+Copy-Item build/super_booster.exe dist/app/
+& "$qt/bin/windeployqt.exe" --release --no-patchqt --no-translations `
+  --no-system-d3d-compiler --no-system-dxc-compiler --no-opengl-sw `
+  --skip-plugin-types qmltooling,generic --qmldir qml dist/app/super_booster.exe
+@('[Paths]', 'Prefix=.', 'Plugins=.', 'QmlImports=qml') |
+  Set-Content dist/app/qt.conf -Encoding ascii
+Copy-Item third-party dist/app/ -Recurse
+./packaging/Build-Installer.ps1 -StageDirectory dist/app -OutputDirectory dist `
+  -Version 2.0.0 -IsccPath 'C:/path/to/ISCC.exe'
+```
+
+Qt, MinGW, and Rust dependency notices are in [third-party](third-party/README.md), along with corresponding Qt source links.
