@@ -6,6 +6,7 @@
 #include <QPointer>
 #include <QPolygonF>
 #include <QRect>
+#include <QTimer>
 #include <QVariant>
 
 class QQuickWindow;
@@ -14,6 +15,8 @@ class WinWindowHelper : public QObject, public QAbstractNativeEventFilter {
     Q_OBJECT
     Q_PROPERTY(int titleBarHeight READ titleBarHeight WRITE setTitleBarHeight NOTIFY titleBarHeightChanged)
     Q_PROPERTY(int captionExcludeRight READ captionExcludeRight WRITE setCaptionExcludeRight NOTIFY captionExcludeRightChanged)
+    Q_PROPERTY(bool wallpaperSamplingEnabled READ wallpaperSamplingEnabled WRITE setWallpaperSamplingEnabled
+               NOTIFY wallpaperSamplingEnabledChanged)
     Q_PROPERTY(QVariant wallpaper READ wallpaper NOTIFY wallpaperChanged)
     Q_PROPERTY(QRect wallpaperGeometry READ wallpaperGeometry NOTIFY wallpaperChanged)
 
@@ -39,6 +42,8 @@ public:
 
     QVariant wallpaper() const { return QVariant::fromValue(m_wallpaper); }
     QRect wallpaperGeometry() const { return m_wallpaperGeometry; }
+    bool wallpaperSamplingEnabled() const { return m_wallpaperSamplingEnabled; }
+    void setWallpaperSamplingEnabled(bool enabled);
 
     static void setWindowsAutostart(bool enabled, const QString& appName, const QString& exePath);
     static bool isWindowsAutostartEnabled(const QString& appName);
@@ -51,13 +56,16 @@ signals:
     void hotkeyToggleBoost();
     void titleBarHeightChanged();
     void captionExcludeRightChanged();
+    void wallpaperSamplingEnabledChanged();
     void wallpaperChanged();
 
 private:
     void registerGlobalHotkeys();
     void unregisterGlobalHotkeys();
     void applyDwmStyling(quintptr hwnd);
+    void invalidateWallpaper();
     void refreshWallpaper();
+    void applyGripSize();
     void syncInputRegion();
 
     QPointer<QQuickWindow> m_window;
@@ -65,7 +73,13 @@ private:
     QList<QPolygonF> m_shardPolygons;
     QImage m_wallpaper;
     QRect m_wallpaperGeometry;
+    quint64 m_wallpaperRevision = 0;
+    QTimer m_wallpaperRefresh;
+    QTimer m_gripResize;
+    QSize m_gripSize;
     qreal m_inputRegionScale = 0;
+    bool m_wallpaperSamplingEnabled = false;
+    bool m_wallpaperDirty = true;
     bool m_hotkeysEnabled = true;
     bool m_hotkeysRegistered = false;
     int m_titleBarHeight = 44;

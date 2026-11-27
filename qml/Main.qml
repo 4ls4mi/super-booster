@@ -59,6 +59,15 @@ Window {
         Qt.callLater(updateShardGeometry)
     }
 
+    function openSettings(showUpdates) {
+        activeTab = 2
+        menuOpen = false
+        if (showUpdates)
+            Qt.callLater(settingsScroll.showUpdateSettings)
+        else
+            settingsScroll.scrollTo(0)
+    }
+
     Component.onCompleted: {
         winHelper.titleBarHeight = 0
         queueGeometry()
@@ -94,13 +103,15 @@ Window {
             && (!backend.engineActive || mainWin.quietForUpdate)
     }
 
+    Binding {
+        target: winHelper
+        property: "wallpaperSamplingEnabled"
+        value: mainWin.material === "blurred" || mainWin.material === "acrylic" || mainWin.material === "mica"
+    }
+
     Connections {
         target: backend
-        function onAudioSetupRequested() {
-            mainWin.activeTab = 2
-            mainWin.menuOpen = false
-            settingsScroll.contentItem.contentY = 0
-        }
+        function onAudioSetupRequested() { mainWin.openSettings(false) }
     }
 
     Shortcut {
@@ -171,6 +182,24 @@ Window {
                 radius: 1
                 color: mainWin.accentColor
             }
+        }
+    }
+
+    component SettingCheckBox: CheckBox {
+        id: control
+
+        Layout.fillWidth: true
+        Layout.minimumWidth: 0
+        palette.windowText: "#e2e8f0"
+
+        contentItem: Label {
+            leftPadding: control.mirrored ? 0 : control.indicator.width + control.spacing
+            rightPadding: control.mirrored ? control.indicator.width + control.spacing : 0
+            text: control.text
+            font: control.font
+            color: control.palette.windowText
+            wrapMode: Text.Wrap
+            verticalAlignment: Text.AlignVCenter
         }
     }
 
@@ -394,39 +423,58 @@ Window {
 
         ScrollView {
             id: settingsScroll
+            objectName: "superBoosterSettingsScroll"
             x: settings.pane.content.x
             y: settings.pane.content.y
             width: settings.pane.content.width
             height: settings.pane.content.height
+            clip: true
+            leftPadding: mirrored ? effectiveScrollBarWidth + 6 : 0
+            rightPadding: mirrored ? 0 : effectiveScrollBarWidth + 6
             contentWidth: availableWidth
+            contentHeight: Math.max(settingsContent.implicitHeight, updateSettings.y + updateSettings.height) + 8
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+            function scrollTo(y) {
+                const view = contentItem as Flickable
+                if (!view)
+                    return
+                view.cancelFlick()
+                view.contentY = view.originY + Math.min(y, Math.max(0, view.contentHeight - view.height))
+            }
+
+            function showUpdateSettings() {
+                scrollTo(contentHeight)
+            }
 
             ColumnLayout {
-                width: parent.width
+                id: settingsContent
+                width: settingsScroll.availableWidth
                 spacing: 12
 
                 RowLayout {
                     Layout.fillWidth: true
+                    Layout.minimumWidth: 0
                     Text {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         text: "Audio Engine & Device Setup"
                         color: "#f8fafc"
                         font.pixelSize: 14
                         font.weight: Font.Bold
+                        wrapMode: Text.Wrap
                     }
                     Button {
                         objectName: "jumpToUpdateSettings"
                         text: qsTr("Updates")
-                        onClicked: {
-                            const view = settingsScroll.contentItem
-                            view.contentY = Math.min(updateSettings.y,
-                                                     Math.max(0, view.contentHeight - view.height))
-                        }
+                        onClicked: settingsScroll.showUpdateSettings()
                     }
                 }
 
                 Text {
                     visible: backend.audioSetupIssue !== ""
                     Layout.fillWidth: true
+                    Layout.minimumWidth: 0
                     wrapMode: Text.WordWrap
                     text: backend.audioSetupIssue
                     color: "#fbbf24"
@@ -435,14 +483,17 @@ Window {
 
                 RowLayout {
                     Layout.fillWidth: true
+                    Layout.minimumWidth: 0
                     spacing: 12
                     RadioButton {
+                        Layout.minimumWidth: 0
                         checked: backend.directMode
                         text: "System Audio Boost"
                         palette.windowText: "#e2e8f0"
                         onClicked: backend.directMode = true
                     }
                     RadioButton {
+                        Layout.minimumWidth: 0
                         checked: !backend.directMode
                         text: "Device Routing (Input → Output)"
                         palette.windowText: "#e2e8f0"
@@ -452,6 +503,7 @@ Window {
 
                 RowLayout {
                     Layout.fillWidth: true
+                    Layout.minimumWidth: 0
                     spacing: 10
                     Text {
                         text: "Playback Speakers:"
@@ -496,6 +548,7 @@ Window {
                 Text {
                     visible: backend.selectedOutDevice !== ""
                     Layout.fillWidth: true
+                    Layout.minimumWidth: 0
                     wrapMode: Text.WordWrap
                     text: backend.windowsOutputName
                         ? "Windows default output is " + backend.windowsOutputName
@@ -506,6 +559,7 @@ Window {
 
                 RowLayout {
                     Layout.fillWidth: true
+                    Layout.minimumWidth: 0
                     visible: backend.directMode
                     spacing: 10
                     Text {
@@ -516,6 +570,7 @@ Window {
                     ComboBox {
                         popup.popupType: Popup.Window
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         model: {
                             const digital = backend.digitalSourceName
                             const devices = [{ id: "", name: "Choose a source" },
@@ -543,6 +598,7 @@ Window {
                 Text {
                     visible: backend.directMode
                     Layout.fillWidth: true
+                    Layout.minimumWidth: 0
                     wrapMode: Text.WordWrap
                     color: "#cbd5e1"
                     font.pixelSize: 12
@@ -553,6 +609,7 @@ Window {
 
                 RowLayout {
                     visible: backend.directMode
+                    Layout.minimumWidth: 0
                     Button {
                         text: "Open Windows Volume Mixer"
                         onClicked: Qt.openUrlExternally("ms-settings:apps-volume")
@@ -567,6 +624,7 @@ Window {
 
                 RowLayout {
                     Layout.fillWidth: true
+                    Layout.minimumWidth: 0
                     visible: !backend.directMode
                     spacing: 10
                     Text {
@@ -577,6 +635,7 @@ Window {
                     ComboBox {
                         popup.popupType: Popup.Window
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         model: backend.inputDevices
                         textRole: "name"
                         valueRole: "id"
@@ -592,6 +651,7 @@ Window {
 
                 RowLayout {
                     Layout.fillWidth: true
+                    Layout.minimumWidth: 0
                     spacing: 10
                     Text {
                         text: "Windows Master:"
@@ -620,27 +680,25 @@ Window {
                     font.weight: Font.Bold
                 }
 
-                CheckBox {
+                SettingCheckBox {
                     checked: backend.autostart
                     text: "Start automatically with Windows (minimized to tray)"
-                    palette.windowText: "#e2e8f0"
                     onClicked: backend.autostart = checked
                 }
-                CheckBox {
+                SettingCheckBox {
                     checked: backend.hotkeysEnabled
                     text: "Enable global Windows hotkeys (Ctrl+Alt+Up, Ctrl+Alt+Down, Ctrl+Alt+B)"
-                    palette.windowText: "#e2e8f0"
                     onClicked: backend.hotkeysEnabled = checked
                 }
-                CheckBox {
+                SettingCheckBox {
                     checked: backend.showTrayMsg
                     text: "Show tray notification when minimized"
-                    palette.windowText: "#e2e8f0"
                     onClicked: backend.showTrayMsg = checked
                 }
 
                 RowLayout {
                     Layout.fillWidth: true
+                    Layout.minimumWidth: 0
                     Item { Layout.fillWidth: true }
                     Button {
                         text: "Open Mini Tray Slider"
@@ -658,6 +716,8 @@ Window {
                     id: updateSettings
                     objectName: "superBoosterUpdateSettings"
                     Layout.fillWidth: true
+                    Layout.minimumWidth: 0
+                    Layout.maximumWidth: settingsScroll.availableWidth
                     spacing: 9
 
                     Text {
@@ -668,21 +728,40 @@ Window {
                     }
                     Label {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         text: qsTr("Installed version %1 · %2").arg(updater.currentVersion).arg(updateNotice.statusText)
                         color: "#a7b8ce"
                         wrapMode: Text.WordWrap
                         font.pixelSize: 12
                     }
-                    CheckBox {
+                    SettingCheckBox {
+                        objectName: "superBoosterSettingsAutoInstallUpdates"
+                        enabled: updater.supported
+                        checked: updater.autoInstallUpdates
+                        text: qsTr("Automatically install updates")
+                        onToggled: updater.autoInstallUpdates = checked
+                    }
+                    Label {
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        visible: updater.supported && (updater.autoInstallUpdates || !updater.automatic)
+                        text: updater.autoInstallUpdates
+                            ? qsTr("Silent installation checks for updates automatically. Turn it off to change when you’re notified.")
+                            : qsTr("Turn on automatic checks to choose a notification.")
+                        color: "#a7b8ce"
+                        wrapMode: Text.WordWrap
+                        font.pixelSize: 12
+                    }
+                    SettingCheckBox {
                         objectName: "superBoosterAutomaticUpdateChecks"
                         enabled: updater.supported && !updater.autoInstallUpdates
                         checked: updater.automatic || updater.autoInstallUpdates
                         text: qsTr("Check for updates automatically")
-                        palette.windowText: "#e2e8f0"
                         onClicked: updater.automatic = checked
                     }
                     RowLayout {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         spacing: 10
 
                         Label {
@@ -693,6 +772,7 @@ Window {
                             objectName: "superBoosterUpdateNotificationMode"
                             popup.popupType: Popup.Window
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 0
                             enabled: updater.supported && updater.automatic && !updater.autoInstallUpdates
                             textRole: "label"
                             valueRole: "id"
@@ -708,6 +788,7 @@ Window {
                     }
                     RowLayout {
                         Layout.fillWidth: true
+                        Layout.minimumWidth: 0
                         Button {
                             objectName: "checkForSuperBoosterUpdates"
                             text: qsTr("Check now")
@@ -739,10 +820,7 @@ Window {
         updateService: updater
         onGeometryChanged: mainWin.queueGeometry()
         onMaterialSelected: materialId => backend.appearanceMaterial = materialId
-        onAudioSettingsRequested: {
-            mainWin.activeTab = 2
-            mainWin.menuOpen = false
-            settingsScroll.contentItem.contentY = 0
-        }
+        onAudioSettingsRequested: mainWin.openSettings(false)
+        onUpdateSettingsRequested: mainWin.openSettings(true)
     }
 }

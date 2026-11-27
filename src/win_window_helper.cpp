@@ -1,13 +1,15 @@
 #include "win_window_helper.h"
 
 #include <QCoreApplication>
+#include <QFutureWatcher>
 #include <QImageReader>
 #include <QJSValue>
 #include <QPainter>
+#include <QPromise>
 #include <QQuickWindow>
 #include <QScreen>
 #include <QScopeGuard>
-#include <QTimer>
+#include <QThreadPool>
 #include <QtMath>
 
 #ifdef Q_OS_WIN
@@ -185,6 +187,12 @@ HRGN shardRegion(const QList<QPolygonF>& shards, qreal scale, int fringe = 0) {
 
 WinWindowHelper::WinWindowHelper(QObject* parent) : QObject(parent) {
     QCoreApplication::instance()->installNativeEventFilter(this);
+    m_wallpaperRefresh.setSingleShot(true);
+    connect(&m_wallpaperRefresh, &QTimer::timeout, this, &WinWindowHelper::refreshWallpaper);
+    m_gripResize.setSingleShot(true);
+    m_gripResize.setTimerType(Qt::PreciseTimer);
+    m_gripResize.setInterval(16);
+    connect(&m_gripResize, &QTimer::timeout, this, &WinWindowHelper::applyGripSize);
 }
 
 WinWindowHelper::~WinWindowHelper() {
@@ -199,9 +207,11 @@ void WinWindowHelper::attachWindow(QQuickWindow* window, bool screenshotNoActiva
         unregisterGlobalHotkeys();
         disconnect(m_window, nullptr, this, nullptr);
     }
+    m_gripResize.stop();
     m_window = window;
     m_hwnd = 0;
     m_inputRegionScale = 0;
+    invalidateWallpaper();
     if (!m_window) {
         return;
     }
@@ -222,15 +232,16 @@ void WinWindowHelper::attachWindow(QQuickWindow* window, bool screenshotNoActiva
         }
         connect(m_window, &QWindow::screenChanged, this, [this] {
             syncInputRegion();
-            QTimer::singleShot(0, this, &WinWindowHelper::refreshWallpaper);
+            invalidateWallpaper();
         });
         connect(m_window, &QObject::destroyed, this, [this] {
             m_hwnd = 0;
             m_hotkeysRegistered = false;
+            invalidateWallpaper();
         });
         syncInputRegion();
-        QTimer::singleShot(0, this, &WinWindowHelper::refreshWallpaper);
     }
+    if (m_wallpaperSamplingEnabled) m_wallpaperRefresh.start();
 #else
     Q_UNUSED(screenshotNoActivate)
 #endif
@@ -304,20 +315,55 @@ void WinWindowHelper::syncInputRegion() {
 #endif
 }
 
+void WinWindowHelper::setWallpaperSamplingEnabled(bool enabled) {
+    if (m_wallpaperSamplingEnabled == enabled) return;
+    m_wallpaperSamplingEnabled = enabled;
+    emit wallpaperSamplingEnabledChanged();
+    if (enabled && m_wallpaperDirty && m_hwnd) m_wallpaperRefresh.start();
+}
+
+void WinWindowHelper::invalidateWallpaper() {
+    ++m_wallpaperRevision;
+    m_wallpaperDirty = true;
+    if (m_wallpaperSamplingEnabled && m_hwnd) m_wallpaperRefresh.start();
+}
+
 void WinWindowHelper::refreshWallpaper() {
 #ifdef Q_OS_WIN
-    if (!m_window || !m_window->screen() || !m_hwnd) return;
+    if (!m_wallpaperSamplingEnabled || !m_wallpaperDirty || !m_window || !m_window->screen() || !m_hwnd)
+        return;
+    m_wallpaperDirty = false;
     const HWND window = reinterpret_cast<HWND>(m_hwnd);
     const HMONITOR monitor = MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST);
     MONITORINFO info{sizeof(MONITORINFO)};
-    const QImage wallpaper = GetMonitorInfoW(monitor, &info)
-        ? blurredWallpaperForMonitor(fromNativeRect(info.rcMonitor), info.dwFlags & MONITORINFOF_PRIMARY)
-        : QImage{};
     const QRect geometry = m_window->screen()->geometry();
-    if (m_wallpaper == wallpaper && m_wallpaperGeometry == geometry) return;
-    m_wallpaper = wallpaper;
-    m_wallpaperGeometry = geometry;
-    emit wallpaperChanged();
+    if (m_wallpaperGeometry != geometry) {
+        m_wallpaper = {};
+        m_wallpaperGeometry = geometry;
+        emit wallpaperChanged();
+    }
+    if (!GetMonitorInfoW(monitor, &info)) return;
+
+    // Shell COM and image-file decoding can block. Keep the glass fallback visible
+    // until the worker supplies the current monitor's sample.
+    const auto revision = m_wallpaperRevision;
+    auto* watcher = new QFutureWatcher<QImage>(this);
+    connect(watcher, &QFutureWatcher<QImage>::finished, this, [this, watcher, revision] {
+        const QImage wallpaper = watcher->result();
+        watcher->deleteLater();
+        if (revision != m_wallpaperRevision || m_wallpaper == wallpaper) return;
+        m_wallpaper = wallpaper;
+        emit wallpaperChanged();
+    });
+    QPromise<QImage> promise;
+    promise.start();
+    watcher->setFuture(promise.future());
+    QThreadPool::globalInstance()->start([monitorBounds = fromNativeRect(info.rcMonitor),
+                                          primary = (info.dwFlags & MONITORINFOF_PRIMARY) != 0,
+                                          promise = std::move(promise)]() mutable {
+        promise.addResult(blurredWallpaperForMonitor(monitorBounds, primary));
+        promise.finish();
+    });
 #endif
 }
 
@@ -388,8 +434,13 @@ void WinWindowHelper::startSystemMove() {
 
 void WinWindowHelper::resizeFromGrip(int width, int height) {
     if (!m_window || m_window->visibility() != QWindow::Windowed) return;
-    const QSize requested(width, height);
-    m_window->resize(requested.boundedTo(m_window->maximumSize()).expandedTo(m_window->minimumSize()));
+    m_gripSize = QSize(width, height);
+    if (!m_gripResize.isActive()) m_gripResize.start();
+}
+
+void WinWindowHelper::applyGripSize() {
+    if (!m_window || m_window->visibility() != QWindow::Windowed) return;
+    m_window->resize(m_gripSize.boundedTo(m_window->maximumSize()).expandedTo(m_window->minimumSize()));
 }
 
 void WinWindowHelper::minimizeWindow() {
@@ -434,9 +485,10 @@ bool WinWindowHelper::nativeEventFilter(const QByteArray& eventType, void* messa
 
     if (msg->message == WM_DPICHANGED) {
         QTimer::singleShot(0, this, &WinWindowHelper::syncInputRegion);
+        invalidateWallpaper();
     } else if (msg->message == WM_DISPLAYCHANGE
                || (msg->message == WM_SETTINGCHANGE && msg->wParam == SPI_SETDESKWALLPAPER)) {
-        QTimer::singleShot(0, this, &WinWindowHelper::refreshWallpaper);
+        invalidateWallpaper();
     }
 
     if (msg->message == WM_NCCALCSIZE && msg->wParam == TRUE) {

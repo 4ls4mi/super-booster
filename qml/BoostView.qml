@@ -399,6 +399,8 @@ Item {
         id: meter
         objectName: "superBoosterMeterShard"
         pane: view.panelLayout.meter
+        readonly property bool showMeterValues: visible && view.Window.window?.visibility !== Window.Minimized
+        readonly property var spectrumBands: showMeterValues ? view.audio.spectrumBands : []
 
         ColumnLayout {
             x: meter.pane.content.x
@@ -417,7 +419,7 @@ Item {
                 }
                 Item { Layout.fillWidth: true }
                 Label {
-                    visible: view.audio.limiterReduction > 0.03
+                    visible: meter.showMeterValues && view.audio.limiterReduction > 0.03
                     text: qsTr("Limiter active")
                     color: "#ffd4ad"
                     font.pixelSize: 10
@@ -430,7 +432,8 @@ Item {
                     id: peakRow
                     required property int index
                     required property string modelData
-                    readonly property real peak: index === 0 ? view.audio.outputPeakL : view.audio.outputPeakR
+                    readonly property real peak: meter.showMeterValues
+                        ? (index === 0 ? view.audio.outputPeakL : view.audio.outputPeakR) : 0
                     Layout.fillWidth: true
                     spacing: 5
 
@@ -469,7 +472,7 @@ Item {
                             anchors.bottom: parent.bottom
                             width: parent.width
                             height: Math.min(parent.height,
-                                             Math.max(1, parent.height * (view.audio.spectrumBands[index] || 0)))
+                                             Math.max(1, parent.height * (meter.spectrumBands[index] || 0)))
                             color: "#9bbfb3cf"
                             radius: 1
                         }

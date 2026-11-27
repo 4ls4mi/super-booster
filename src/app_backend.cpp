@@ -548,7 +548,9 @@ void AppBackend::refreshSessions() {
     const QJsonDocument doc = QJsonDocument::fromJson(QByteArray(raw));
     sb_free_string(raw);
     if (!doc.isArray()) return;
-    m_audioSessions = doc.array().toVariantList();
+    auto sessions = doc.array().toVariantList();
+    if (sessions == m_audioSessions) return;
+    m_audioSessions.swap(sessions);
     emit sessionsChanged();
 }
 
@@ -588,6 +590,8 @@ void AppBackend::pollMeters() {
     float il = 0, ir = 0, ol = 0, orr = 0, red = 0;
     sb_get_meters(&il, &ir, &ol, &orr, &red);
 
+    bool metersChangedSinceLastPoll = m_inL != il || m_inR != ir || m_outL != ol ||
+                                      m_outR != orr || m_limRed != red;
     m_inL = il;
     m_inR = ir;
     m_outL = ol;
@@ -597,9 +601,13 @@ void AppBackend::pollMeters() {
     float bands[SPECTRUM_COUNT]{};
     const size_t n = sb_get_spectrum(bands, SPECTRUM_COUNT);
     for (size_t i = 0; i < n; ++i) {
-        m_spectrum[static_cast<int>(i)] = static_cast<double>(bands[i]);
+        auto& band = m_spectrum[static_cast<int>(i)];
+        if (band.toDouble() != bands[i]) {
+            band = static_cast<double>(bands[i]);
+            metersChangedSinceLastPoll = true;
+        }
     }
-    emit metersChanged();
+    if (metersChangedSinceLastPoll) emit metersChanged();
 
     if (m_screenshotMode || !engineRequested()) return;
     const bool starting = sb_is_starting();

@@ -161,17 +161,22 @@ void GlassFace::paint(QPainter* painter) {
         painter->fillRect(bounds, reflection);
     }
 
+    // Half of each stroke is clipped off. The descending light and inset shadow
+    // give the glass an edge about four logical pixels deep without tinting the seams.
+    QLinearGradient shadow(bounds.topLeft(), bounds.bottomRight());
+    shadow.setColorAt(0.00, QColor(20, 17, 35, 70));
+    shadow.setColorAt(0.55, QColor(20, 17, 35, 110));
+    shadow.setColorAt(1.00, QColor(13, 10, 26, 170));
+    painter->strokePath(pane, QPen(QBrush(shadow), 8.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+
     const QColor edge = QColor::fromRgba(finish.edge);
     const QColor edgeAccent = QColor::fromRgba(finish.edgeAccent);
-    QLinearGradient bevel(0, 0, width() * 0.84, height());
-    bevel.setColorAt(0.00, edge);
-    bevel.setColorAt(0.45, edgeAccent);
-    bevel.setColorAt(0.72, edge);
-    bevel.setColorAt(1.00, edgeAccent);
-    painter->setOpacity(0.12);
-    painter->strokePath(pane, QPen(QBrush(bevel), 6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    QLinearGradient bevel(bounds.topLeft(), bounds.bottomRight());
+    bevel.setColorAt(0.00, edge.lighter(115));
+    bevel.setColorAt(0.46, edge);
+    bevel.setColorAt(0.76, edgeAccent);
+    bevel.setColorAt(1.00, edgeAccent.darker(135));
+    const qreal bevelWidth = m_material == QLatin1String("glassy") ? 4.4 : 3.6;
+    painter->strokePath(pane, QPen(QBrush(bevel), bevelWidth, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     painter->restore();
-
-    const qreal edgeWidth = m_material == QLatin1String("glassy") ? 1.65 : 1.20;
-    painter->strokePath(pane, QPen(QBrush(bevel), edgeWidth, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
 }

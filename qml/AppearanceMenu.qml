@@ -10,6 +10,7 @@ GlassShard {
     required property var updateService
     signal materialSelected(string id)
     signal audioSettingsRequested()
+    signal updateSettingsRequested()
 
     x: pane.x
     y: pane.y
@@ -153,7 +154,31 @@ GlassShard {
             color: "#65dcd1e5"
         }
 
-        SectionLabel { iconName: "updates"; text: qsTr("Updates") }
+        Button {
+            id: updateSettingsButton
+            objectName: "superBoosterAppearanceUpdateSettings"
+            Layout.alignment: Qt.AlignLeft
+            implicitWidth: updateSettingsContents.implicitWidth + 12
+            implicitHeight: 26
+            leftPadding: 5
+            rightPadding: 5
+            topPadding: 2
+            bottomPadding: 2
+            text: qsTr("Update settings")
+            onClicked: menu.updateSettingsRequested()
+
+            contentItem: SectionLabel {
+                id: updateSettingsContents
+                iconName: "updates"
+                text: updateSettingsButton.text
+            }
+            background: Rectangle {
+                radius: 6
+                color: updateSettingsButton.down ? "#40ffffff"
+                    : updateSettingsButton.hovered ? "#25ffffff" : "transparent"
+                border.color: updateSettingsButton.visualFocus ? "#98f5dc" : "transparent"
+            }
+        }
 
         GlassSwitch {
             objectName: "superBoosterSilentAutomaticUpdates"
@@ -162,7 +187,7 @@ GlassShard {
             enabled: menu.updateService.supported
             checked: menu.updateService.autoInstallUpdates
             text: qsTr("Automatically install updates")
-            font.pixelSize: width < 210 ? 11 : 12
+            font.pixelSize: menu.pane.content.width < 210 ? 11 : 12
             wrapLabel: true
             Accessible.description: qsTr("Downloads and installs silently")
             onToggled: menu.updateService.autoInstallUpdates = checked
@@ -172,6 +197,7 @@ GlassShard {
 
         Button {
             id: settingsButton
+            objectName: "superBoosterAppearanceSettings"
             Layout.alignment: Qt.AlignLeft
             implicitWidth: settingsContents.implicitWidth + 12
             implicitHeight: 32

@@ -90,7 +90,13 @@ int main(int argc, char* argv[]) {
 
     backend.setWindows(mainWindow, popupWindow);
 #ifdef SUPER_BOOSTER_TEST_LAYOUT
-    if (verifyLayout) return mainWindow ? verifyMainLayout(mainWindow) : 1;
+    if (verifyLayout) {
+        if (!mainWindow) return 1;
+        if (QGuiApplication::platformName() == QLatin1String("windows")) {
+            winHelper.attachWindow(mainWindow, false);
+        }
+        return verifyMainLayout(mainWindow);
+    }
 #endif
     if (mainWindow) {
         if (screenshotMode) {

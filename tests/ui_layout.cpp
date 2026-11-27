@@ -1,11 +1,21 @@
 #include "layout_verification.h"
 
+#include <QCoreApplication>
 #include <QDebug>
 #include <QEventLoop>
+#include <QGuiApplication>
+#include <QMouseEvent>
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QScreen>
 #include <QTimer>
+
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 namespace {
 constexpr auto Appearance = "superBoosterAppearanceShard";
@@ -31,6 +41,104 @@ QQuickItem* visualItem(QQuickItem* parent, QLatin1String name) {
     return nullptr;
 }
 
+QRectF sceneBounds(QQuickItem* item) {
+    return item->mapRectToScene(QRectF(0, 0, item->width(), item->height()));
+}
+
+#ifdef Q_OS_WIN
+bool acceptsNativeMouse(QQuickWindow* window, const QPointF& point) {
+    if (QGuiApplication::platformName() != QLatin1String("windows")) return true;
+
+    const auto hwnd = reinterpret_cast<HWND>(window->winId());
+    const QPoint pixels = (point * window->devicePixelRatio()).toPoint();
+    POINT screenPoint{pixels.x(), pixels.y()};
+    RECT rect{};
+    if (!ClientToScreen(hwnd, &screenPoint) || !GetWindowRect(hwnd, &rect)) return false;
+
+    const HRGN region = CreateRectRgn(0, 0, 0, 0);
+    if (!region) return false;
+    const bool inside = GetWindowRgn(hwnd, region) != ERROR &&
+        PtInRegion(region, screenPoint.x - rect.left, screenPoint.y - rect.top);
+    DeleteObject(region);
+    return inside && SendMessageW(hwnd, WM_NCHITTEST, 0, MAKELPARAM(screenPoint.x, screenPoint.y)) == HTCLIENT;
+}
+#endif
+
+bool clickControl(QQuickWindow* window, const char* name, QQuickItem* hitItem = nullptr) {
+    auto* control = visualItem(window->contentItem(), QLatin1String(name));
+    if (!control || !control->isVisible() || !control->isEnabled()) {
+        qWarning() << "Missing click target:" << name;
+        return false;
+    }
+    const QPointF point = sceneBounds(hitItem ? hitItem : control).center();
+#ifdef Q_OS_WIN
+    if (!acceptsNativeMouse(window, point)) {
+        qWarning() << "Windows intercepted the mouse at the control center:" << name << point;
+        return false;
+    }
+#endif
+    const QPointF global = window->mapToGlobal(point.toPoint());
+    QMouseEvent press(QEvent::MouseButtonPress, point, point, global,
+                      Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(window, &press);
+    QMouseEvent release(QEvent::MouseButtonRelease, point, point, global,
+                        Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(window, &release);
+    settleLayout();
+    return true;
+}
+
+bool verifyUpdateSettings(QQuickWindow* window) {
+    window->resize(860, 550);
+    settleLayout();
+    if (!clickControl(window, "superBoosterMainMenu") ||
+        !clickControl(window, "superBoosterAppearanceUpdateSettings")) {
+        return false;
+    }
+    auto* viewport = visualItem(window->contentItem(), QLatin1String("superBoosterSettingsScroll"));
+    auto* selector = visualItem(window->contentItem(), QLatin1String("superBoosterUpdateNotificationMode"));
+    auto* details = window->findChild<QQuickWindow*>(QStringLiteral("superBoosterUpdateDetails"));
+    const auto updateControlsInsideViewport = [&] {
+        if (!viewport || !viewport->isVisible() || window->property("menuOpen").toBool()) return false;
+        for (const auto name : {"superBoosterSettingsAutoInstallUpdates", "superBoosterUpdateNotificationMode",
+                                "checkForSuperBoosterUpdates", "openSuperBoosterUpdateDetails"}) {
+            auto* control = visualItem(window->contentItem(), QLatin1String(name));
+            if (!control || !control->isVisible() ||
+                !sceneBounds(viewport).adjusted(-0.5, -0.5, 0.5, 0.5).contains(sceneBounds(control))) {
+                qWarning() << "Update settings left a control outside the scroll viewport:" << name
+                           << sceneBounds(viewport) << (control ? sceneBounds(control) : QRectF{});
+                return false;
+            }
+        }
+        return true;
+    };
+    if (!updateControlsInsideViewport()) return false;
+
+    if (selector && selector->isEnabled()) {
+        auto* popup = selector->property("popup").value<QObject*>();
+        auto* indicator = selector->property("indicator").value<QQuickItem*>();
+        if (!popup || !indicator || !clickControl(window, "superBoosterUpdateNotificationMode", indicator) ||
+            !popup->property("visible").toBool()) {
+            qWarning() << "The notification selector must open on a mouse click.";
+            return false;
+        }
+        QMetaObject::invokeMethod(popup, "close");
+        settleLayout();
+    }
+
+    if (!details || !clickControl(window, "openSuperBoosterUpdateDetails") || !details->isVisible()) {
+        qWarning() << "The Details button must open update details on a mouse click.";
+        return false;
+    }
+    details->hide();
+    window->setProperty("activeTab", 0);
+    settleLayout();
+
+    return clickControl(window, "superBoosterMainMenu") &&
+        clickControl(window, "superBoosterAppearanceSettings") &&
+        clickControl(window, "jumpToUpdateSettings") && updateControlsInsideViewport();
+}
+
 QList<QRectF> visibleSurfaces(QQuickWindow* window) {
     QList<QRectF> bounds;
     for (const auto name : {Brand, Commands, Gain, Playback, Effects, Meter, Grip}) {
@@ -39,7 +147,7 @@ QList<QRectF> visibleSurfaces(QQuickWindow* window) {
             qWarning() << "Missing visible layout item:" << name;
             return {};
         }
-        const QRectF box = item->mapRectToScene(QRectF(0, 0, item->width(), item->height()));
+        const QRectF box = sceneBounds(item);
         if (box.width() < 18 || box.height() < 18 || box.x() < -1 || box.y() < -1 ||
             box.right() > window->width() + 1 || box.bottom() > window->height() + 1) {
             qWarning() << "Out-of-bounds layout item:" << name << box << window->size();
@@ -101,5 +209,5 @@ int verifyMainLayout(QQuickWindow* window) {
         qWarning() << "The closed-menu layout must adapt to the new window size.";
         return 1;
     }
-    return 0;
+    return verifyUpdateSettings(window) ? 0 : 1;
 }

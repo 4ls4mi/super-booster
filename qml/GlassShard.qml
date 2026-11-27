@@ -6,6 +6,7 @@ Item {
     id: shard
 
     property string material: "clear"
+    readonly property bool samplesWallpaper: material === "blurred" || material === "acrylic" || material === "mica"
     // Coordinates are fractions of this shard's width and height.
     property var points: [Qt.point(0.025, 0.08), Qt.point(0.15, 0.015), Qt.point(0.65, 0.03),
         Qt.point(0.96, 0.015), Qt.point(0.995, 0.12), Qt.point(0.98, 0.89),
@@ -20,7 +21,14 @@ Item {
     onVisibleChanged: geometryChanged()
 
     function windowPolygon() {
-        return points.map(point => mapToItem(null, point.x * (width - 2) + 1, point.y * (height - 2) + 1))
+        const origin = mapToItem(null, 1, 1)
+        const right = mapToItem(null, width - 1, 1)
+        const bottom = mapToItem(null, 1, height - 1)
+        const horizontal = Qt.point(right.x - origin.x, right.y - origin.y)
+        const vertical = Qt.point(bottom.x - origin.x, bottom.y - origin.y)
+        return points.map(point => Qt.point(
+            origin.x + point.x * horizontal.x + point.y * vertical.x,
+            origin.y + point.x * horizontal.y + point.y * vertical.y))
     }
 
     GlassFace {
@@ -30,6 +38,8 @@ Item {
         wallpaper: winHelper.wallpaper
         wallpaperGeometry: winHelper.wallpaperGeometry
         screenPosition: {
+            if (!shard.samplesWallpaper)
+                return Qt.point(0, 0)
             const window = shard.Window.window
             if (!window || !shard.parent || window.width < 1 || window.height < 1)
                 return Qt.point(0, 0)
