@@ -43,6 +43,7 @@ jobs:
             "-DCMAKE_CXX_COMPILER=$mingw/g++.exe" `
             "-DCMAKE_RC_COMPILER=$mingw/windres.exe"
           cmake --build build
+          ctest --test-dir build --output-on-failure
           cargo test --locked --target x86_64-pc-windows-gnu --manifest-path audio_core/Cargo.toml
 
           New-Item -ItemType Directory -Path dist/app | Out-Null
