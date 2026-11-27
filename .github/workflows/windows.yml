@@ -32,8 +32,8 @@ jobs:
       - name: Compile, test, and deploy the Windows application
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
-          $qt = Join-Path $env:RUNNER_TEMP 'Qt/6.8.3/mingw_64'
-          $mingw = Join-Path $env:RUNNER_TEMP 'Qt/Tools/mingw1310_64/bin'
+          $qt = (Join-Path $env:RUNNER_TEMP 'Qt/6.8.3/mingw_64').Replace('\', '/')
+          $mingw = (Join-Path $env:RUNNER_TEMP 'Qt/Tools/mingw1310_64/bin').Replace('\', '/')
           $env:Path = "$mingw;$qt/bin;$env:Path"
           $env:CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER = Join-Path $mingw 'gcc.exe'
 
