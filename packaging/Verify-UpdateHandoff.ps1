@@ -10,8 +10,8 @@ if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hoste
     throw 'The upgrade verification requires a fresh GitHub-hosted Windows profile.'
 }
 
-$previousVersion = '2.0.3'
-$previousSha256 = 'C4F937C803A6043C933D1ACD24547E59DD8E51601CCDE33017FAEB1112B29E4E'
+$previousVersion = '2.1.0'
+$previousSha256 = '16A0C79B4D8D1A39D32F38398BA6A133A340CECAA936B8B1464BE6F97A49428E'
 $candidate = Get-Item -LiteralPath $InstallerPath
 if ($candidate.Name -cnotmatch '^SuperBooster-([0-9]+\.[0-9]+\.[0-9]+)-windows-x64-setup\.exe$') {
     throw 'The candidate installer filename does not match its release.'

@@ -1,6 +1,9 @@
 #include "app_backend.h"
 #include "updater.h"
 #include "win_window_helper.h"
+#ifdef SUPER_BOOSTER_TEST_LAYOUT
+#include "../tests/layout_verification.h"
+#endif
 
 #include <QApplication>
 #include <QDir>
@@ -12,6 +15,7 @@
 #include <QQmlContext>
 #include <QQuickStyle>
 #include <QQuickWindow>
+#include <QSize>
 #include <QTimer>
 
 int main(int argc, char* argv[]) {
@@ -24,19 +28,36 @@ int main(int argc, char* argv[]) {
     app.setWindowIcon(QIcon(QStringLiteral(":/icons/super-booster.ico")));
 
     QString screenshotPath;
+    QString screenshotMaterial;
+    QSize screenshotSize;
+    bool screenshotMenuOpen = false;
     bool startMinimized = false;
+#ifdef SUPER_BOOSTER_TEST_LAYOUT
+    const bool verifyLayout = app.arguments().contains(QStringLiteral("--verify-layout"));
+#else
+    constexpr bool verifyLayout = false;
+#endif
     const QStringList args = app.arguments();
     for (int i = 1; i < args.size(); ++i) {
         if (args[i] == QLatin1String("--screenshot") && i + 1 < args.size()) {
             screenshotPath = args[++i];
         } else if (args[i].startsWith(QLatin1String("--screenshot="))) {
             screenshotPath = args[i].mid(13);
+        } else if (args[i] == QLatin1String("--screenshot-menu")) {
+            screenshotMenuOpen = true;
+        } else if (args[i] == QLatin1String("--screenshot-material") && i + 1 < args.size()) {
+            screenshotMaterial = args[++i];
+        } else if (args[i] == QLatin1String("--screenshot-size") && i + 1 < args.size()) {
+            const QStringList dimensions = args[++i].split(QLatin1Char('x'));
+            if (dimensions.size() != 2) return 1;
+            screenshotSize = QSize(dimensions[0].toInt(), dimensions[1].toInt());
+            if (screenshotSize.isEmpty() || screenshotSize.width() > 4096 || screenshotSize.height() > 4096) return 1;
         } else if (args[i] == QLatin1String("--minimized")) {
             startMinimized = true;
         }
     }
 
-    const bool screenshotMode = !screenshotPath.isEmpty();
+    const bool screenshotMode = !screenshotPath.isEmpty() || verifyLayout;
     app.setQuitOnLastWindowClosed(screenshotMode);
 
     WinWindowHelper winHelper;
@@ -51,6 +72,8 @@ int main(int argc, char* argv[]) {
     engine.rootContext()->setContextProperty(QStringLiteral("updater"), &updater);
     engine.rootContext()->setContextProperty(QStringLiteral("winHelper"), &winHelper);
     engine.rootContext()->setContextProperty(QStringLiteral("screenshotMode"), screenshotMode);
+    engine.rootContext()->setContextProperty(QStringLiteral("screenshotMenuOpen"), screenshotMenuOpen);
+    engine.rootContext()->setContextProperty(QStringLiteral("screenshotMaterial"), screenshotMaterial);
     engine.rootContext()->setContextProperty(QStringLiteral("startMinimized"), startMinimized);
 
     QObject::connect(
@@ -66,12 +89,20 @@ int main(int argc, char* argv[]) {
     QQuickWindow* popupWindow = mainWindow ? mainWindow->findChild<QQuickWindow*>(QStringLiteral("miniPopupWindow")) : nullptr;
 
     backend.setWindows(mainWindow, popupWindow);
+#ifdef SUPER_BOOSTER_TEST_LAYOUT
+    if (verifyLayout) return mainWindow ? verifyMainLayout(mainWindow) : 1;
+#endif
     if (mainWindow) {
         if (screenshotMode) {
             mainWindow->setFlag(Qt::WindowDoesNotAcceptFocus, true);
             winHelper.attachWindow(mainWindow, true);
             mainWindow->show();
             winHelper.placeBehindOtherWindows();
+            if (screenshotSize.isValid()) {
+                QTimer::singleShot(150, mainWindow, [mainWindow, screenshotSize]() {
+                    mainWindow->resize(screenshotSize);
+                });
+            }
 
             QTimer::singleShot(850, mainWindow, [mainWindow, screenshotPath, &app]() {
                 const QFileInfo output(screenshotPath);

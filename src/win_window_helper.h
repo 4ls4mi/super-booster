@@ -1,9 +1,11 @@
 #pragma once
 
 #include <QAbstractNativeEventFilter>
+#include <QImage>
 #include <QObject>
 #include <QPointer>
 #include <QPolygonF>
+#include <QRect>
 #include <QVariant>
 
 class QQuickWindow;
@@ -12,6 +14,8 @@ class WinWindowHelper : public QObject, public QAbstractNativeEventFilter {
     Q_OBJECT
     Q_PROPERTY(int titleBarHeight READ titleBarHeight WRITE setTitleBarHeight NOTIFY titleBarHeightChanged)
     Q_PROPERTY(int captionExcludeRight READ captionExcludeRight WRITE setCaptionExcludeRight NOTIFY captionExcludeRightChanged)
+    Q_PROPERTY(QVariant wallpaper READ wallpaper NOTIFY wallpaperChanged)
+    Q_PROPERTY(QRect wallpaperGeometry READ wallpaperGeometry NOTIFY wallpaperChanged)
 
 public:
     explicit WinWindowHelper(QObject* parent = nullptr);
@@ -27,11 +31,14 @@ public:
     void setCaptionExcludeRight(int w);
 
     Q_INVOKABLE void startSystemMove();
-    Q_INVOKABLE void startSystemResize(int edges);
+    Q_INVOKABLE void resizeFromGrip(int width, int height);
     Q_INVOKABLE void minimizeWindow();
     Q_INVOKABLE void toggleMaximize();
     Q_INVOKABLE void placeBehindOtherWindows();
-    Q_INVOKABLE void setShardGeometry(const QVariantList& polygons, const QString& material);
+    Q_INVOKABLE void setShardGeometry(const QVariantList& polygons);
+
+    QVariant wallpaper() const { return QVariant::fromValue(m_wallpaper); }
+    QRect wallpaperGeometry() const { return m_wallpaperGeometry; }
 
     static void setWindowsAutostart(bool enabled, const QString& appName, const QString& exePath);
     static bool isWindowsAutostartEnabled(const QString& appName);
@@ -44,26 +51,21 @@ signals:
     void hotkeyToggleBoost();
     void titleBarHeightChanged();
     void captionExcludeRightChanged();
+    void wallpaperChanged();
 
 private:
-    enum class Backdrop { None, Acrylic, Mica, Blur };
-
     void registerGlobalHotkeys();
     void unregisterGlobalHotkeys();
     void applyDwmStyling(quintptr hwnd);
-    bool createBackdrop();
-    void destroyBackdrop();
-    void syncBackdrop();
+    void refreshWallpaper();
     void syncInputRegion();
 
     QPointer<QQuickWindow> m_window;
     quintptr m_hwnd = 0;
-    quintptr m_backdropHwnd = 0;
     QList<QPolygonF> m_shardPolygons;
-    Backdrop m_backdrop = Backdrop::None;
-    qreal m_backdropScale = 0;
+    QImage m_wallpaper;
+    QRect m_wallpaperGeometry;
     qreal m_inputRegionScale = 0;
-    bool m_backdropUnavailable = false;
     bool m_hotkeysEnabled = true;
     bool m_hotkeysRegistered = false;
     int m_titleBarHeight = 44;

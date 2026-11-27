@@ -115,7 +115,10 @@ void AppBackend::setWindows(QQuickWindow* mainWindow, QQuickWindow* popupWindow)
     m_mainWindow = mainWindow;
     m_popupWindow = popupWindow;
 
-    if (!m_mainWindow || m_screenshotMode) return;
+    if (!m_mainWindow) return;
+    connect(m_mainWindow, &QWindow::screenChanged, this, &AppBackend::watchWorkArea);
+    watchWorkArea(m_mainWindow->screen());
+    if (m_screenshotMode) return;
 
     const QPoint savedPosition(m_winX, m_winY);
     QScreen* screen = m_hasWindowPosition ? QGuiApplication::screenAt(savedPosition) : nullptr;
@@ -130,6 +133,20 @@ void AppBackend::setWindows(QQuickWindow* mainWindow, QQuickWindow* popupWindow)
         m_mainWindow->setPosition(std::min(m_winX, available.right() - width + 1),
                                   std::min(m_winY, available.bottom() - height + 1));
     }
+}
+
+QRect AppBackend::mainWindowWorkArea() const {
+    const QScreen* screen = m_mainWindow ? m_mainWindow->screen() : QGuiApplication::primaryScreen();
+    return screen ? screen->availableGeometry() : QRect(0, 0, 800, 600);
+}
+
+void AppBackend::watchWorkArea(QScreen* screen) {
+    disconnect(m_workAreaConnection);
+    if (screen) {
+        m_workAreaConnection = connect(screen, &QScreen::availableGeometryChanged, this,
+                                       &AppBackend::mainWindowWorkAreaChanged);
+    }
+    emit mainWindowWorkAreaChanged();
 }
 
 QString AppBackend::settingsFilePath() const {

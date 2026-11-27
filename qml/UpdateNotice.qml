@@ -38,7 +38,9 @@ Window {
 
     readonly property color textColor: "#f1f5f9"
     readonly property color mutedColor: "#a7b8ce"
-    readonly property color accentColor: "#7dd3fc"
+    readonly property color accentColor: "#81f2ce"
+    readonly property rect workArea: backend.mainWindowWorkArea
+    readonly property real notificationLane: Math.min(152, Math.max(56, workArea.height * 0.18))
 
     title: qsTr("Super Booster update available")
     flags: Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.WindowDoesNotAcceptFocus
@@ -47,27 +49,22 @@ Window {
     screen: anchorWindow.screen
     color: "transparent"
     visible: false
-    width: Math.min(400, (Screen.width || 420) - 24)
-    height: popupContent.implicitHeight + 32
-    x: Screen.virtualX + Math.min(Screen.width, Screen.desktopAvailableWidth || Screen.width) - width - 16
-    y: Math.max(Screen.virtualY + 12, Screen.virtualY
-        + Math.min(Screen.height, Screen.desktopAvailableHeight || Screen.height) - height - 22)
+    width: Math.min(394, Math.max(1, workArea.width - 32))
+    height: popupContent.implicitHeight + 40
+    x: workArea.x + Math.max(0, workArea.width - width - 16)
+    y: workArea.y + Math.max(8, workArea.height - height - notificationLane)
 
     onCanOfferChanged: if (!canOffer) hide()
-
-    function openReleases() {
-        Qt.openUrlExternally("https://github.com/4ls4mi/super-booster/releases/latest")
-    }
 
     function showDetails() {
         hide()
         if (!details.visible) {
             const targetX = anchorWindow.visible ? anchorWindow.x + (anchorWindow.width - details.width) / 2
-                                                : Screen.virtualX + (Screen.width - details.width) / 2
+                                                : workArea.x + (workArea.width - details.width) / 2
             const targetY = anchorWindow.visible ? anchorWindow.y + (anchorWindow.height - details.height) / 2
-                                                : Screen.virtualY + (Screen.height - details.height) / 2
-            details.x = Math.round(Math.max(Screen.virtualX, Math.min(targetX, Screen.virtualX + Screen.width - details.width)))
-            details.y = Math.round(Math.max(Screen.virtualY, Math.min(targetY, Screen.virtualY + Screen.height - details.height)))
+                                                : workArea.y + (workArea.height - details.height) / 2
+            details.x = Math.round(Math.max(workArea.x, Math.min(targetX, workArea.x + workArea.width - details.width)))
+            details.y = Math.round(Math.max(workArea.y, Math.min(targetY, workArea.y + workArea.height - details.height)))
         }
         if (details.visibility === Window.Minimized)
             details.showNormal()
@@ -101,34 +98,32 @@ Window {
         }
     }
 
-    Rectangle {
+    GlassShard {
         anchors.fill: parent
-        radius: 13
-        color: "#131c2b"
-        border.color: "#465c76"
+        material: "frosted"
+        points: [Qt.point(0.005, 0.245), Qt.point(0.067, 0.037), Qt.point(0.357, 0.065),
+            Qt.point(0.62, 0.09), Qt.point(0.955, 0.018), Qt.point(0.993, 0.13),
+            Qt.point(0.988, 0.78), Qt.point(0.946, 0.952), Qt.point(0.573, 0.924),
+            Qt.point(0.057, 0.993), Qt.point(0.024, 0.822)]
 
         ColumnLayout {
             id: popupContent
             anchors.fill: parent
-            anchors.margins: 16
+            anchors.margins: 20
             spacing: 9
 
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 10
 
-                Rectangle {
+                Text {
                     Layout.preferredWidth: 34
                     Layout.preferredHeight: 34
-                    radius: 8
-                    color: "#21364e"
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "⬇"
-                        color: notice.accentColor
-                        font.pixelSize: 17
-                    }
+                    text: "⇩"
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    color: notice.textColor
+                    font.pixelSize: 26
                 }
 
                 ColumnLayout {
@@ -152,32 +147,37 @@ Window {
                         font.pixelSize: 12
                     }
                 }
+
+                UpdateButton {
+                    objectName: "dismissSuperBoosterUpdate"
+                    text: "×"
+                    Accessible.name: qsTr("Dismiss this version")
+                    leftPadding: 8
+                    rightPadding: 8
+                    onClicked: {
+                        notice.hide()
+                        notice.service.dismiss()
+                    }
+                }
             }
 
             Flow {
                 Layout.fillWidth: true
+                layoutDirection: Qt.RightToLeft
                 spacing: 6
 
                 UpdateButton {
                     objectName: "viewSuperBoosterUpdate"
-                    text: qsTr("View update")
+                    text: qsTr("Update")
                     highlighted: true
                     onClicked: notice.showDetails()
                 }
                 UpdateButton {
                     objectName: "remindSuperBoosterUpdate"
-                    text: qsTr("Remind me")
+                    text: qsTr("Later")
                     onClicked: {
                         notice.hide()
                         notice.service.remindLater()
-                    }
-                }
-                UpdateButton {
-                    objectName: "dismissSuperBoosterUpdate"
-                    text: qsTr("Dismiss")
-                    onClicked: {
-                        notice.hide()
-                        notice.service.dismiss()
                     }
                 }
             }
@@ -190,8 +190,8 @@ Window {
         screen: notice.anchorWindow.screen
         transientParent: null
         modality: Qt.NonModal
-        width: Math.min(548, (Screen.width || 568) - 24)
-        height: Math.min(386, (Screen.height || 406) - 38)
+        width: Math.min(548, Math.max(1, notice.workArea.width - 24))
+        height: Math.min(386, Math.max(1, notice.workArea.height - 38))
         color: "#101723"
         title: qsTr("Super Booster Update")
         visible: false
@@ -309,10 +309,6 @@ Window {
                     text: qsTr("Check again")
                     onClicked: notice.checkNow()
                 }
-                UpdateButton {
-                    text: qsTr("GitHub releases")
-                    onClicked: notice.openReleases()
-                }
             }
         }
     }
@@ -328,16 +324,16 @@ Window {
         contentItem: Text {
             text: action.text
             font: action.font
-            color: action.highlighted ? "#e0f2fe" : "#e2e8f0"
+            color: action.highlighted ? "#082b27" : "#edf6ff"
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
         }
         background: Rectangle {
             radius: 7
             color: action.highlighted
-                ? (action.down ? "#195484" : action.hovered ? "#206ca0" : "#1b557e")
-                : (action.down ? "#1d3049" : action.hovered ? "#2b415c" : "#202f43")
-            border.color: action.activeFocus ? "#7dd3fc" : action.highlighted ? "#3d90c0" : "#3b4e67"
+                ? (action.down ? "#50d1ae" : action.hovered ? "#a2fce2" : "#80efce")
+                : (action.down ? "#30344c" : action.hovered ? "#4c4b69" : "#3c3c56")
+            border.color: action.activeFocus ? "#afffe8" : action.highlighted ? "#b1f5e0" : "#666480"
         }
     }
 }

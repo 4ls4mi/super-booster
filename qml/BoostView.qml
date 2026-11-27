@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -6,13 +7,14 @@ import QtQuick.Shapes
 Item {
     id: view
 
+    required property var panelLayout
     required property var audio
     required property string material
     required property color accent
-    property bool compact: false
+    required property bool resizeEnabled
     readonly property var shards: [gain, playback, effects, meter]
     signal shardGeometryChanged()
-    signal resizeRequested()
+    signal resizeRequested(int width, int height)
 
     readonly property var playbackDevices: {
         const automatic = audio.automaticPlaybackOutputName
@@ -20,99 +22,112 @@ Item {
             .concat(Array.from(audio.outputDevices))
     }
 
-    GlassShard {
-        id: gain
-        width: (view.width - 12) * (view.compact ? 0.55 : 0.56)
-        height: view.height - 121
+    component Pane: GlassShard {
+        required property var pane
+        x: pane.x
+        y: pane.y
+        width: pane.width
+        height: pane.height
+        points: pane.points
         material: view.material
-        points: [Qt.point(0.002, 0.68), Qt.point(0.055, 0.19), Qt.point(0.17, 0.065),
-            Qt.point(0.45, 0.04), Qt.point(0.61, 0.01), Qt.point(0.98, 0.09),
-            Qt.point(0.957, 0.32), Qt.point(0.998, 0.57), Qt.point(0.94, 0.9),
-            Qt.point(0.85, 0.995), Qt.point(0.48, 0.947), Qt.point(0.22, 0.97),
-            Qt.point(0.07, 0.86)]
         onGeometryChanged: view.shardGeometryChanged()
+    }
+
+    component PanelTitle: RowLayout {
+        id: title
+        required property string iconName
+        required property string text
+        property int textSize: 19
+
+        spacing: 9
+        LineIcon {
+            name: title.iconName
+            implicitWidth: title.textSize + 3
+            implicitHeight: implicitWidth
+        }
+        Label {
+            text: title.text
+            color: "#f8f5fc"
+            font.pixelSize: title.textSize
+            font.weight: Font.DemiBold
+        }
+    }
+
+    Pane {
+        id: gain
+        objectName: "superBoosterGainShard"
+        pane: view.panelLayout.gain
 
         ColumnLayout {
-            anchors.fill: parent
-            anchors.leftMargin: 38
-            anchors.rightMargin: 31
-            anchors.topMargin: 24
-            anchors.bottomMargin: 27
-            spacing: 7
+            x: gain.pane.content.x
+            y: gain.pane.content.y
+            width: gain.pane.content.width
+            height: gain.pane.content.height
+            spacing: 6
 
             Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                Layout.minimumHeight: 100
 
                 Item {
                     id: dial
                     anchors.centerIn: parent
-                    width: Math.min(250, parent.width, parent.height * 1.53)
-                    height: width * 0.63
-                    readonly property real radius: width * 0.415
+                    width: Math.min(285, parent.width, parent.height / 0.78)
+                    height: width * 0.78
+                    readonly property real radius: width * 0.425
+                    readonly property real stroke: Math.max(8, width * 0.059)
 
                     Shape {
                         anchors.fill: parent
                         preferredRendererType: Shape.CurveRenderer
-                        ShapePath {
-                            strokeColor: "#5ca8c6cf"
-                            strokeWidth: 12
+
+                        component DialArc: ShapePath {
+                            id: arc
+                            required property real sweep
                             fillColor: "transparent"
+                            strokeWidth: dial.stroke
                             capStyle: ShapePath.RoundCap
                             PathAngleArc {
-                                centerX: dial.width / 2
-                                centerY: dial.width * 0.47
+                                centerX: dial.width * 0.5
+                                centerY: dial.width * 0.5
                                 radiusX: dial.radius
-                                radiusY: radiusX
-                                startAngle: 160
-                                sweepAngle: 220
+                                radiusY: dial.radius
+                                startAngle: 155
+                                sweepAngle: arc.sweep
                             }
                         }
-                        ShapePath {
-                            strokeColor: view.accent
-                            strokeWidth: 12
-                            fillColor: "transparent"
-                            capStyle: ShapePath.RoundCap
-                            PathAngleArc {
-                                centerX: dial.width / 2
-                                centerY: dial.width * 0.47
-                                radiusX: dial.radius
-                                radiusY: radiusX
-                                startAngle: 160
-                                sweepAngle: Math.max(2, 220 * view.audio.volume / 500)
-                            }
-                        }
+
+                        DialArc { strokeColor: "#55d6cbe5"; sweep: 230 }
+                        DialArc { strokeColor: view.accent; sweep: Math.max(2, 230 * view.audio.volume / 500) }
                     }
 
                     Column {
                         anchors.horizontalCenter: parent.horizontalCenter
-                        anchors.bottom: parent.bottom
-                        anchors.bottomMargin: parent.height * 0.17
+                        anchors.top: parent.top
+                        anchors.topMargin: parent.height * 0.33
                         spacing: 0
 
                         Label {
                             anchors.horizontalCenter: parent.horizontalCenter
                             text: Math.round(view.audio.volume) + "%"
-                            color: "#f7fffe"
-                            font.pixelSize: Math.min(52, gain.width * 0.17)
+                            color: "#fcf9ff"
+                            font.pixelSize: Math.min(58, dial.width * 0.26)
                             font.weight: Font.Bold
                         }
                         Label {
                             anchors.horizontalCenter: parent.horizontalCenter
+                            text: qsTr("Boost level")
+                            color: "#f8f3fa"
+                            font.pixelSize: 14
+                        }
+                        Label {
+                            anchors.horizontalCenter: parent.horizontalCenter
                             text: view.audio.decibelText
-                            color: "#d2f3f1"
-                            font.pixelSize: 12
+                            color: "#d8cfe5"
+                            font.pixelSize: 10
                         }
                     }
                 }
-            }
-
-            Label {
-                text: qsTr("Boost level")
-                color: "#f1fcff"
-                font.pixelSize: 15
-                font.weight: Font.DemiBold
             }
 
             BoostSlider {
@@ -120,25 +135,45 @@ Item {
                 from: view.audio.directMode ? 100 : 0
                 value: view.audio.volume
                 accentColor: view.accent
-                onMoved: value => view.audio.volume = value
-                onReleased: view.audio.applyBoostLevel(view.audio.volume)
+                Accessible.name: qsTr("Boost level")
+                onMoved: {
+                    view.audio.volume = value
+                    if (!pressed) view.audio.applyBoostLevel(value)
+                }
+                onPressedChanged: if (!pressed) view.audio.applyBoostLevel(value)
             }
 
             RowLayout {
                 Layout.fillWidth: true
-                spacing: 3
+                spacing: 2
+
                 Repeater {
                     model: [100, 150, 200, 300, 400, 500]
+
                     Button {
+                        id: preset
                         required property int modelData
+
                         Layout.fillWidth: true
                         Layout.minimumWidth: 0
-                        implicitHeight: 25
-                        padding: 2
+                        implicitHeight: 22
+                        padding: 1
                         text: modelData + "%"
-                        font.pixelSize: 10
                         checked: Math.round(view.audio.volume) === modelData
                         onClicked: view.audio.applyBoostLevel(modelData)
+
+                        contentItem: Label {
+                            text: preset.text
+                            color: preset.checked ? view.accent : "#f0e9f5"
+                            font.pixelSize: 10
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        background: Rectangle {
+                            radius: 4
+                            color: preset.checked ? "#4d7b9e96" : preset.hovered ? "#26ffffff" : "transparent"
+                            border.color: preset.visualFocus ? view.accent : "transparent"
+                        }
                     }
                 }
             }
@@ -146,34 +181,46 @@ Item {
             Button {
                 id: power
                 Layout.alignment: Qt.AlignHCenter
-                Layout.fillWidth: true
-                Layout.maximumWidth: 240
-                implicitHeight: 39
+                Layout.preferredWidth: Math.min(214, parent.width * 0.84)
+                implicitHeight: 36
                 text: view.audio.engineActive ? qsTr("Pause Boost")
                     : view.audio.engineStarting ? qsTr("Cancel Boost")
                     : view.audio.audioSetupIssue ? qsTr("Set Up Boost") : qsTr("Start Boost")
                 onClicked: view.audio.toggleEngine()
 
-                contentItem: Label {
-                    text: power.text
-                    color: "#062928"
-                    font.pixelSize: 15
-                    font.weight: Font.Bold
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
+                contentItem: Item {
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: 7
+                        LineIcon {
+                            anchors.verticalCenter: parent.verticalCenter
+                            name: (view.audio.engineActive || view.audio.engineStarting) ? "pause" : "play"
+                            color: "#102c24"
+                            width: 17
+                            height: width
+                        }
+                        Label {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: power.text
+                            color: "#102c24"
+                            font.pixelSize: 15
+                            font.weight: Font.Bold
+                        }
+                    }
                 }
                 background: Rectangle {
-                    color: power.down ? "#5fe1c4" : power.hovered ? "#a0fbe7" : "#76efd3"
+                    color: power.down ? "#71d9b4" : power.hovered ? "#adffe1" : "#8ffbd0"
                     border.color: power.visualFocus ? "#ffffff" : "#70ffffff"
                     border.width: power.visualFocus ? 2 : 1
-                    radius: 8
+                    radius: 9
                 }
             }
 
             Label {
-                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignHCenter
+                Layout.preferredWidth: parent.width * 0.82
                 text: view.audio.statusMessage
-                color: "#d2e5eb"
+                color: "#e1d8ea"
                 font.pixelSize: 10
                 horizontalAlignment: Text.AlignHCenter
                 elide: Text.ElideRight
@@ -184,29 +231,26 @@ Item {
         }
     }
 
-    GlassShard {
+    Pane {
         id: playback
-        x: gain.width + 6
-        y: 12
-        width: view.width - x - 3
-        height: 138
-        material: view.material
-        points: [Qt.point(0.005, 0.35), Qt.point(0.055, 0.18), Qt.point(0.46, 0.012),
-            Qt.point(0.961, 0.205), Qt.point(0.992, 0.79), Qt.point(0.76, 0.985),
-            Qt.point(0.08, 0.9)]
-        onGeometryChanged: view.shardGeometryChanged()
+        objectName: "superBoosterPlaybackShard"
+        pane: view.panelLayout.playback
 
         ColumnLayout {
-            anchors.fill: parent
-            anchors.leftMargin: 25
-            anchors.rightMargin: 23
-            anchors.topMargin: 20
-            anchors.bottomMargin: 19
-            spacing: 5
+            x: playback.pane.content.x
+            y: playback.pane.content.y + (playback.pane.content.height - implicitHeight) * 0.5
+            width: playback.pane.content.width
+            spacing: 7
 
-            Label { text: qsTr("Playback"); color: "#f3fbff"; font.pixelSize: 19; font.weight: Font.DemiBold }
+            PanelTitle { iconName: "playback"; text: qsTr("Playback") }
+
             ComboBox {
                 id: outputChoice
+                readonly property string compactDeviceName: {
+                    const description = /^.+? \((.+)\)$/.exec(displayText)
+                    return description ? description[1] : displayText
+                }
+
                 Layout.fillWidth: true
                 Layout.minimumWidth: 0
                 model: view.playbackDevices
@@ -217,132 +261,160 @@ Item {
                     return Math.max(i, 0)
                 }
                 popup.popupType: Popup.Window
-                Accessible.name: qsTr("Playback device")
+                Accessible.name: qsTr("Playback device: %1").arg(displayText)
+                ToolTip.visible: hovered && (compactDeviceName !== displayText || playbackName.truncated)
+                ToolTip.text: displayText
                 onActivated: view.audio.selectedOutDevice = currentValue
 
                 contentItem: Label {
+                    id: playbackName
+
                     leftPadding: 10
-                    rightPadding: 27
-                    text: outputChoice.displayText
-                    color: "#f3fcff"
+                    rightPadding: 23
+                    text: outputChoice.compactDeviceName
+                    color: "#f8f5fc"
                     verticalAlignment: Text.AlignVCenter
                     elide: Text.ElideRight
                 }
-                indicator: Text {
-                    x: outputChoice.width - width - 12
-                    y: (outputChoice.height - height) / 2 - 2
-                    text: "⌄"
-                    color: "#caecec"
-                    font.pixelSize: 20
+                indicator: LineIcon {
+                    x: outputChoice.width - width - 10
+                    y: (outputChoice.height - height) / 2
+                    name: "expand"
+                    width: 13
+                    height: width
                 }
                 background: Rectangle {
                     implicitHeight: 34
                     radius: 7
-                    color: outputChoice.hovered ? "#a13d6471" : "#73315365"
-                    border.color: outputChoice.visualFocus ? "#a8f0e4" : "#739fc4ce"
+                    color: outputChoice.hovered ? "#53746687" : "#42302548"
+                    border.color: outputChoice.visualFocus ? "#a9f5de" : "#91c8bbd8"
                     border.width: outputChoice.visualFocus ? 2 : 1
                 }
             }
+
             Label {
                 Layout.fillWidth: true
                 text: view.audio.selectedOutDevice === "" ? qsTr("Automatic playback") : qsTr("Selected playback device")
-                color: "#c6dfe8"
-                font.pixelSize: 11
+                color: "#ddd4e8"
+                font.pixelSize: 10
                 elide: Text.ElideRight
             }
         }
     }
 
-    GlassShard {
+    Pane {
         id: effects
-        x: playback.x - 3
-        y: playback.y + playback.height + 1
-        width: view.width - x
-        height: Math.min(287, view.height - y - 14)
-        material: view.material
-        points: [Qt.point(0.055, 0.15), Qt.point(0.13, 0.012), Qt.point(0.73, 0.061),
-            Qt.point(0.94, 0.16), Qt.point(0.991, 0.83), Qt.point(0.93, 0.92),
-            Qt.point(0.2, 0.99), Qt.point(0.005, 0.82)]
-        onGeometryChanged: view.shardGeometryChanged()
-
-        Label {
-            anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            anchors.rightMargin: 21
-            anchors.bottomMargin: 27
-            text: "◢"
-            color: "#83c0c9"
-            Accessible.name: qsTr("Resize window")
-            MouseArea {
-                anchors.fill: parent
-                anchors.margins: -5
-                cursorShape: Qt.SizeFDiagCursor
-                onPressed: view.resizeRequested()
-            }
-        }
+        objectName: "superBoosterEffectsShard"
+        pane: view.panelLayout.effects
 
         ColumnLayout {
-            anchors.fill: parent
-            anchors.leftMargin: 27
-            anchors.rightMargin: 26
-            anchors.topMargin: 21
-            anchors.bottomMargin: 23
-            spacing: 3
+            x: effects.pane.content.x
+            y: effects.pane.content.y
+            width: effects.pane.content.width
+            height: effects.pane.content.height
+            spacing: 1
 
-            Label { text: qsTr("Audio effects"); color: "#f3fbff"; font.pixelSize: 19; font.weight: Font.DemiBold }
+            PanelTitle {
+                iconName: "effects"
+                text: qsTr("Audio effects")
+                Layout.bottomMargin: 4
+            }
+
             GlassSwitch {
                 Layout.fillWidth: true
+                implicitHeight: 27
                 text: qsTr("Soft limiter")
                 checked: view.audio.limiterEnabled
                 onToggled: view.audio.limiterEnabled = checked
             }
             GlassSwitch {
                 Layout.fillWidth: true
+                implicitHeight: 27
                 text: qsTr("SuperBoost Clarity")
                 checked: view.audio.superBoost
                 onToggled: view.audio.superBoost = checked
             }
             RowLayout {
                 Layout.fillWidth: true
-                Label { text: qsTr("Bass boost"); color: "#f0fbff" }
+                Label { text: qsTr("Bass boost"); color: "#f8f5fc" }
                 Item { Layout.fillWidth: true }
-                Label { text: Math.round(view.audio.bassBoost * 100) + "%"; color: "#a2f2de" }
+                Label { text: Math.round(view.audio.bassBoost * 100) + "%"; color: "#a2f5d8" }
             }
-            Slider {
+            BoostSlider {
                 Layout.fillWidth: true
                 from: 0
                 to: 1
+                stepSize: 0
+                accentColor: view.accent
                 value: view.audio.bassBoost
                 Accessible.name: qsTr("Bass boost")
                 onMoved: view.audio.bassBoost = value
             }
             Item { Layout.fillHeight: true }
         }
+
+        Item {
+            id: grip
+            objectName: "superBoosterResizeGrip"
+            x: view.panelLayout.grip.x
+            y: view.panelLayout.grip.y
+            width: view.panelLayout.grip.width
+            height: view.panelLayout.grip.height
+            Accessible.name: qsTr("Resize window")
+
+            LineIcon {
+                anchors.centerIn: parent
+                name: "resize"
+                color: gripArea.containsMouse ? view.accent : "#ece3f6"
+                width: Math.min(27, parent.width)
+                height: width
+            }
+
+            MouseArea {
+                id: gripArea
+
+                property point dragOrigin
+                property size windowSizeAtPress
+
+                anchors.fill: parent
+                enabled: view.resizeEnabled
+                hoverEnabled: true
+                preventStealing: true
+                cursorShape: Qt.SizeFDiagCursor
+                onPressed: mouse => {
+                    dragOrigin = mapToItem(null, mouse.x, mouse.y)
+                    windowSizeAtPress = Qt.size(view.width, view.height)
+                }
+                onPositionChanged: mouse => {
+                    if (!pressed) return
+                    const position = mapToItem(null, mouse.x, mouse.y)
+                    view.resizeRequested(Math.round(windowSizeAtPress.width + position.x - dragOrigin.x),
+                                         Math.round(windowSizeAtPress.height + position.y - dragOrigin.y))
+                }
+            }
+        }
     }
 
-    GlassShard {
+    Pane {
         id: meter
-        x: 12
-        y: gain.height + 15
-        width: gain.width - 6
-        height: 105
-        material: view.material
-        points: [Qt.point(0.005, 0.47), Qt.point(0.08, 0.08), Qt.point(0.38, 0.02),
-            Qt.point(0.93, 0.11), Qt.point(0.99, 0.54), Qt.point(0.91, 0.91),
-            Qt.point(0.54, 0.89), Qt.point(0.087, 0.982), Qt.point(0.038, 0.82)]
-        onGeometryChanged: view.shardGeometryChanged()
+        objectName: "superBoosterMeterShard"
+        pane: view.panelLayout.meter
 
         ColumnLayout {
-            anchors.fill: parent
-            anchors.leftMargin: 31
-            anchors.rightMargin: 29
-            anchors.topMargin: 12
-            anchors.bottomMargin: 20
-            spacing: 4
+            x: meter.pane.content.x
+            y: meter.pane.content.y
+            width: meter.pane.content.width
+            height: meter.pane.content.height
+            spacing: 2
 
             RowLayout {
                 Layout.fillWidth: true
-                Label { text: qsTr("Output level"); color: "#f3fbff"; font.pixelSize: 14; font.weight: Font.DemiBold }
+
+                PanelTitle {
+                    iconName: "output"
+                    text: qsTr("Output level")
+                    textSize: 14
+                }
                 Item { Layout.fillWidth: true }
                 Label {
                     visible: view.audio.limiterReduction > 0.03
@@ -353,18 +425,22 @@ Item {
             }
             Repeater {
                 model: ["L", "R"]
+
                 RowLayout {
                     id: peakRow
                     required property int index
                     required property string modelData
                     readonly property real peak: index === 0 ? view.audio.outputPeakL : view.audio.outputPeakR
                     Layout.fillWidth: true
-                    Label { text: peakRow.modelData; color: "#d4f3ee"; font.pixelSize: 10 }
+                    spacing: 5
+
+                    Label { text: peakRow.modelData; color: "#e3dceb"; font.pixelSize: 9 }
                     Rectangle {
                         Layout.fillWidth: true
-                        height: 6
+                        implicitHeight: 6
                         radius: 3
-                        color: "#527997a4"
+                        color: "#58ded4e9"
+
                         Rectangle {
                             width: parent.width * Math.min(1, peakRow.peak)
                             height: parent.height
@@ -375,20 +451,26 @@ Item {
                 }
             }
             Row {
+                id: spectrum
                 Layout.fillWidth: true
                 Layout.fillHeight: true
+                Layout.leftMargin: 12
                 spacing: 2
+
                 Repeater {
                     model: 24
+
                     Item {
                         required property int index
-                        width: (parent.width - 46) / 24
+                        width: (spectrum.width - 23 * spectrum.spacing) / 24
                         height: parent.height
+
                         Rectangle {
                             anchors.bottom: parent.bottom
                             width: parent.width
-                            height: Math.max(1, parent.height * Math.min(1, view.audio.spectrumBands[index] || 0))
-                            color: "#85cad1"
+                            height: Math.min(parent.height,
+                                             Math.max(1, parent.height * (view.audio.spectrumBands[index] || 0)))
+                            color: "#9bbfb3cf"
                             radius: 1
                         }
                     }

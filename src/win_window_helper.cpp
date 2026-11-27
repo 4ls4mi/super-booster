@@ -1,10 +1,14 @@
 #include "win_window_helper.h"
 
 #include <QCoreApplication>
+#include <QImageReader>
 #include <QJSValue>
-#include <QtMath>
+#include <QPainter>
 #include <QQuickWindow>
+#include <QScreen>
+#include <QScopeGuard>
 #include <QTimer>
+#include <QtMath>
 
 #ifdef Q_OS_WIN
 #ifndef NOMINMAX
@@ -13,6 +17,7 @@
 #include <windows.h>
 #include <windowsx.h>
 #include <dwmapi.h>
+#include <shobjidl.h>
 #endif
 
 namespace {
@@ -25,77 +30,118 @@ constexpr int HOTKEY_TOGGLE = 0x5303;
 constexpr DWORD DwmDarkMode = 20;              // DWMWA_USE_IMMERSIVE_DARK_MODE
 constexpr DWORD DwmCornerPreference = 33;      // DWMWA_WINDOW_CORNER_PREFERENCE
 constexpr DWORD DwmBorderColor = 34;           // DWMWA_BORDER_COLOR
-constexpr DWORD DwmSystemBackdrop = 38;       // DWMWA_SYSTEMBACKDROP_TYPE
 constexpr DWORD DwmNoCorners = 1;             // DWMWCP_DONOTROUND
 constexpr COLORREF DwmNoBorder = 0xfffffffe;  // DWMWA_COLOR_NONE
-constexpr int MicaBackdrop = 2;               // DWMSBT_MAINWINDOW
-constexpr int AcrylicBackdrop = 3;            // DWMSBT_TRANSIENTWINDOW
-constexpr wchar_t BackdropClass[] = L"SuperBooster.ShardBackdrop";
 
 void removeDwmDecorations(HWND hwnd) {
     DwmSetWindowAttribute(hwnd, DwmCornerPreference, &DwmNoCorners, sizeof(DwmNoCorners));
     DwmSetWindowAttribute(hwnd, DwmBorderColor, &DwmNoBorder, sizeof(DwmNoBorder));
 }
 
-LRESULT CALLBACK backdropWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
-    switch (message) {
-    case WM_NCHITTEST:
-        return HTTRANSPARENT;
-    case WM_MOUSEACTIVATE:
-        return MA_NOACTIVATE;
-    default:
-        return DefWindowProcW(hwnd, message, wParam, lParam);
+QRect fromNativeRect(const RECT& rect) {
+    return QRect(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top);
+}
+
+struct WallpaperSettings {
+    QString filename;
+    COLORREF background = RGB(21, 23, 33);
+    DESKTOP_WALLPAPER_POSITION position = DWPOS_FILL;
+};
+
+WallpaperSettings desktopWallpaperSettings(const QRect& monitor) {
+    const HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    if (FAILED(com) && com != RPC_E_CHANGED_MODE) return {};
+    const auto uninitialize = qScopeGuard([com] {
+        if (SUCCEEDED(com)) CoUninitialize();
+    });
+
+    IDesktopWallpaper* wallpaper = nullptr;
+    if (FAILED(CoCreateInstance(__uuidof(DesktopWallpaper), nullptr, CLSCTX_INPROC_SERVER | CLSCTX_LOCAL_SERVER,
+                                 __uuidof(IDesktopWallpaper), reinterpret_cast<void**>(&wallpaper)))) return {};
+    const auto release = qScopeGuard([wallpaper] { wallpaper->Release(); });
+
+    WallpaperSettings settings;
+    wallpaper->GetBackgroundColor(&settings.background);
+    wallpaper->GetPosition(&settings.position);
+    UINT monitorCount = 0;
+    if (FAILED(wallpaper->GetMonitorDevicePathCount(&monitorCount))) return {};
+    for (UINT index = 0; index < monitorCount; ++index) {
+        LPWSTR device = nullptr;
+        if (FAILED(wallpaper->GetMonitorDevicePathAt(index, &device))) continue;
+        const auto freeDevice = qScopeGuard([device] { CoTaskMemFree(device); });
+        RECT nativeMonitor{};
+        if (FAILED(wallpaper->GetMonitorRECT(device, &nativeMonitor))
+                || fromNativeRect(nativeMonitor) != monitor) continue;
+
+        LPWSTR path = nullptr;
+        if (SUCCEEDED(wallpaper->GetWallpaper(device, &path)) && path) {
+            settings.filename = QString::fromWCharArray(path);
+        }
+        CoTaskMemFree(path);
+        break;
     }
+    return settings;
 }
 
-bool registerBackdropClass() {
-    WNDCLASSW windowClass{};
-    windowClass.lpfnWndProc = backdropWindowProc;
-    windowClass.hInstance = GetModuleHandleW(nullptr);
-    windowClass.hbrBackground = static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
-    windowClass.lpszClassName = BackdropClass;
-    return RegisterClassW(&windowClass) != 0 || GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
-}
+QImage blurredWallpaperForMonitor(const QRect& monitor, bool primary) {
+    if (monitor.isEmpty()) return {};
 
-bool systemTransparencyEnabled() {
-    BOOL composition = FALSE;
-    if (FAILED(DwmIsCompositionEnabled(&composition)) || !composition) return false;
-
-    HIGHCONTRASTW highContrast{sizeof(HIGHCONTRASTW), 0, nullptr};
-    if (SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(highContrast), &highContrast, 0)
-            && (highContrast.dwFlags & HCF_HIGHCONTRASTON)) {
-        return false;
+    WallpaperSettings settings = desktopWallpaperSettings(monitor);
+    if (settings.filename.isEmpty() && primary) {
+        // Some desktop sessions only expose the system-wide wallpaper setting.
+        wchar_t filename[MAX_PATH]{};
+        if (SystemParametersInfoW(SPI_GETDESKWALLPAPER, MAX_PATH, filename, 0)) {
+            settings.filename = QString::fromWCharArray(filename);
+        }
     }
+    if (settings.filename.isEmpty()) return {};
 
-    DWORD enabled = 1;
-    DWORD size = sizeof(enabled);
-    const auto preference = RegGetValueW(HKEY_CURRENT_USER,
-        LR"(Software\Microsoft\Windows\CurrentVersion\Themes\Personalize)",
-        L"EnableTransparency", RRF_RT_REG_DWORD, nullptr, &enabled, &size);
-    return preference != ERROR_SUCCESS || enabled != 0;
-}
+    // Decode only the configured wallpaper file. The renderer never captures the desktop.
+    // A small sample with smooth upscaling removes high-frequency detail.
+    QImageReader reader(settings.filename);
+    const QSize originalSize = reader.size();
+    if (originalSize.isEmpty()) return {};
+    const QSize decodedSize = originalSize.scaled(QSize(100, 100), Qt::KeepAspectRatio);
+    reader.setScaledSize(decodedSize.expandedTo(QSize(1, 1)));
+    const QImage source = reader.read();
+    if (source.isNull()) return {};
 
-bool applySystemBackdrop(HWND hwnd, int material) {
-    const MARGINS wholeClient{-1, -1, -1, -1};
-    return SUCCEEDED(DwmSetWindowAttribute(hwnd, DwmSystemBackdrop, &material, sizeof(material)))
-        && SUCCEEDED(DwmExtendFrameIntoClientArea(hwnd, &wholeClient));
-}
+    const QSize sampleSize = monitor.size().scaled(QSize(56, 56), Qt::KeepAspectRatio)
+                                           .expandedTo(QSize(1, 1));
+    QImage sample(sampleSize, QImage::Format_RGB32);
+    sample.fill(QColor(GetRValue(settings.background), GetGValue(settings.background),
+                       GetBValue(settings.background)));
+    QPainter painter(&sample);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform);
+    const qreal scaleX = qreal(sampleSize.width()) / monitor.width();
+    const qreal scaleY = qreal(sampleSize.height()) / monitor.height();
 
-bool applyLegacyBlur(HWND hwnd, bool acrylic) {
-    // The legacy accent policy is only used for classic blur and pre-22621 Windows.
-    constexpr int AccentPolicyAttribute = 19;
-    struct AccentPolicy { int state; int flags; DWORD color; int animation; };
-    struct CompositionData { int attribute; void* data; UINT size; };
-    using SetCompositionAttribute = BOOL (WINAPI*)(HWND, const CompositionData*);
-    static const auto apply = reinterpret_cast<SetCompositionAttribute>(GetProcAddress(
-        GetModuleHandleW(L"user32.dll"), "SetWindowCompositionAttribute"));
-    if (!apply) return false;
-
-    constexpr int AccentBlur = 3;
-    constexpr int AccentAcrylic = 4;
-    AccentPolicy policy{acrylic ? AccentAcrylic : AccentBlur, 0, acrylic ? 0x48251a10UL : 0UL, 0};
-    const CompositionData composition{AccentPolicyAttribute, &policy, sizeof(policy)};
-    return apply(hwnd, &composition);
+    if (settings.position == DWPOS_TILE) {
+        const QSize tileSize(qMax(1, qRound(originalSize.width() * scaleX)),
+                             qMax(1, qRound(originalSize.height() * scaleY)));
+        for (int y = 0; y < sample.height(); y += tileSize.height()) {
+            for (int x = 0; x < sample.width(); x += tileSize.width()) {
+                painter.drawImage(QRect(QPoint(x, y), tileSize), source);
+            }
+        }
+    } else {
+        const QRect layout = settings.position == DWPOS_SPAN
+            ? QRect(GetSystemMetrics(SM_XVIRTUALSCREEN), GetSystemMetrics(SM_YVIRTUALSCREEN),
+                    GetSystemMetrics(SM_CXVIRTUALSCREEN), GetSystemMetrics(SM_CYVIRTUALSCREEN))
+            : monitor;
+        QSize size = originalSize;
+        if (settings.position == DWPOS_STRETCH) size = layout.size();
+        if (settings.position == DWPOS_FIT) size.scale(layout.size(), Qt::KeepAspectRatio);
+        if (settings.position == DWPOS_FILL || settings.position == DWPOS_SPAN) {
+            size.scale(layout.size(), Qt::KeepAspectRatioByExpanding);
+        }
+        QRectF target{QPointF(), QSizeF(size)};
+        target.moveCenter(QRectF(layout).center() - QPointF(monitor.topLeft()));
+        painter.scale(scaleX, scaleY);
+        painter.drawImage(target, source);
+    }
+    painter.end();
+    return sample;
 }
 
 HRGN shardRegion(const QList<QPolygonF>& shards, qreal scale, int fringe = 0) {
@@ -142,7 +188,6 @@ WinWindowHelper::WinWindowHelper(QObject* parent) : QObject(parent) {
 }
 
 WinWindowHelper::~WinWindowHelper() {
-    destroyBackdrop();
     unregisterGlobalHotkeys();
     if (QCoreApplication::instance()) {
         QCoreApplication::instance()->removeNativeEventFilter(this);
@@ -154,10 +199,8 @@ void WinWindowHelper::attachWindow(QQuickWindow* window, bool screenshotNoActiva
         unregisterGlobalHotkeys();
         disconnect(m_window, nullptr, this, nullptr);
     }
-    destroyBackdrop();
     m_window = window;
     m_hwnd = 0;
-    m_backdropUnavailable = false;
     m_inputRegionScale = 0;
     if (!m_window) {
         return;
@@ -177,18 +220,16 @@ void WinWindowHelper::attachWindow(QQuickWindow* window, bool screenshotNoActiva
         if (m_hotkeysEnabled) {
             registerGlobalHotkeys();
         }
-        connect(m_window, &QWindow::visibilityChanged, this, [this] { syncBackdrop(); });
         connect(m_window, &QWindow::screenChanged, this, [this] {
             syncInputRegion();
-            syncBackdrop();
+            QTimer::singleShot(0, this, &WinWindowHelper::refreshWallpaper);
         });
         connect(m_window, &QObject::destroyed, this, [this] {
             m_hwnd = 0;
             m_hotkeysRegistered = false;
-            destroyBackdrop();
         });
         syncInputRegion();
-        syncBackdrop();
+        QTimer::singleShot(0, this, &WinWindowHelper::refreshWallpaper);
     }
 #else
     Q_UNUSED(screenshotNoActivate)
@@ -220,7 +261,7 @@ void WinWindowHelper::applyDwmStyling(quintptr hwndPtr) {
 #endif
 }
 
-void WinWindowHelper::setShardGeometry(const QVariantList& polygons, const QString& material) {
+void WinWindowHelper::setShardGeometry(const QVariantList& polygons) {
     QList<QPolygonF> shards;
     for (auto value : polygons) {
         if (value.metaType().id() == qMetaTypeId<QJSValue>()) {
@@ -235,38 +276,25 @@ void WinWindowHelper::setShardGeometry(const QVariantList& polygons, const QStri
         if (polygon.size() >= 3) shards.append(polygon);
     }
 
-    Backdrop next = Backdrop::None;
-    const auto name = material.toLower();
-    if (name == QLatin1String("acrylic") || name == QLatin1String("frosted")) {
-        next = Backdrop::Acrylic;
-    } else if (name == QLatin1String("mica")) {
-        next = Backdrop::Mica;
-    } else if (name == QLatin1String("blurred")) {
-        next = Backdrop::Blur;
-    }
-
-    if (m_backdrop != next) {
-        destroyBackdrop();
-        m_backdrop = next;
-        m_backdropUnavailable = false;
-    }
     if (m_shardPolygons != shards) {
         m_shardPolygons = shards;
-        m_backdropScale = 0;
         m_inputRegionScale = 0;
     }
     syncInputRegion();
-    syncBackdrop();
 }
 
 void WinWindowHelper::syncInputRegion() {
 #ifdef Q_OS_WIN
     const auto main = reinterpret_cast<HWND>(m_hwnd);
-    if (!main || m_shardPolygons.isEmpty()) return;
+    if (!main) return;
     const qreal scale = m_window->devicePixelRatio();
     if (m_inputRegionScale == scale) return;
 
-    HRGN region = shardRegion(m_shardPolygons, scale, qCeil(1.5 * scale));
+    if (m_shardPolygons.isEmpty()) {
+        if (SetWindowRgn(main, nullptr, TRUE)) m_inputRegionScale = scale;
+        return;
+    }
+    HRGN region = shardRegion(m_shardPolygons, scale, qCeil(scale));
     if (!region) return;
     if (SetWindowRgn(main, region, TRUE)) {
         m_inputRegionScale = scale;
@@ -276,77 +304,20 @@ void WinWindowHelper::syncInputRegion() {
 #endif
 }
 
-bool WinWindowHelper::createBackdrop() {
+void WinWindowHelper::refreshWallpaper() {
 #ifdef Q_OS_WIN
-    if (!systemTransparencyEnabled() || !registerBackdropClass()) return false;
-
-    const auto instance = GetModuleHandleW(nullptr);
-    HWND backdrop = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT,
-        BackdropClass, L"", WS_POPUP, 0, 0, 0, 0, nullptr, nullptr, instance, nullptr);
-    if (!backdrop) return false;
-
-    m_backdropHwnd = reinterpret_cast<quintptr>(backdrop);
-    removeDwmDecorations(backdrop);
-    const BOOL darkMode = TRUE;
-    DwmSetWindowAttribute(backdrop, DwmDarkMode, &darkMode, sizeof(darkMode));
-    DwmSetWindowAttribute(backdrop, DWMWA_EXCLUDED_FROM_PEEK, &darkMode, sizeof(darkMode));
-
-    bool applied = false;
-    if (m_backdrop == Backdrop::Mica) {
-        applied = applySystemBackdrop(backdrop, MicaBackdrop);
-    } else if (m_backdrop == Backdrop::Acrylic) {
-        applied = applySystemBackdrop(backdrop, AcrylicBackdrop) || applyLegacyBlur(backdrop, true);
-    } else if (m_backdrop == Backdrop::Blur) {
-        applied = applyLegacyBlur(backdrop, false) || applySystemBackdrop(backdrop, AcrylicBackdrop);
-    }
-    if (!applied) destroyBackdrop();
-    return applied;
-#else
-    return false;
-#endif
-}
-
-void WinWindowHelper::destroyBackdrop() {
-#ifdef Q_OS_WIN
-    if (m_backdropHwnd) DestroyWindow(reinterpret_cast<HWND>(m_backdropHwnd));
-#endif
-    m_backdropHwnd = 0;
-    m_backdropScale = 0;
-}
-
-void WinWindowHelper::syncBackdrop() {
-#ifdef Q_OS_WIN
-    const auto main = reinterpret_cast<HWND>(m_hwnd);
-    if (!main || m_backdrop == Backdrop::None || m_shardPolygons.isEmpty()
-            || !IsWindowVisible(main) || IsIconic(main)) {
-        if (m_backdropHwnd) ShowWindow(reinterpret_cast<HWND>(m_backdropHwnd), SW_HIDE);
-        return;
-    }
-    if (m_backdropUnavailable) return;
-    if (!m_backdropHwnd && !createBackdrop()) {
-        m_backdropUnavailable = true;
-        return;
-    }
-
-    const auto backdrop = reinterpret_cast<HWND>(m_backdropHwnd);
-    const qreal scale = m_window->devicePixelRatio();
-    if (m_backdropScale != scale) {
-        HRGN region = shardRegion(m_shardPolygons, scale);
-        if (!region || !SetWindowRgn(backdrop, region, TRUE)) {
-            if (region) DeleteObject(region);
-            destroyBackdrop();
-            return;
-        }
-        // Windows owns the region after a successful SetWindowRgn.
-        m_backdropScale = scale;
-    }
-
-    POINT origin{};
-    RECT client{};
-    if (ClientToScreen(main, &origin) && GetClientRect(main, &client)) {
-        SetWindowPos(backdrop, main, origin.x, origin.y, client.right, client.bottom,
-                     SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOOWNERZORDER);
-    }
+    if (!m_window || !m_window->screen() || !m_hwnd) return;
+    const HWND window = reinterpret_cast<HWND>(m_hwnd);
+    const HMONITOR monitor = MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO info{sizeof(MONITORINFO)};
+    const QImage wallpaper = GetMonitorInfoW(monitor, &info)
+        ? blurredWallpaperForMonitor(fromNativeRect(info.rcMonitor), info.dwFlags & MONITORINFOF_PRIMARY)
+        : QImage{};
+    const QRect geometry = m_window->screen()->geometry();
+    if (m_wallpaper == wallpaper && m_wallpaperGeometry == geometry) return;
+    m_wallpaper = wallpaper;
+    m_wallpaperGeometry = geometry;
+    emit wallpaperChanged();
 #endif
 }
 
@@ -415,10 +386,10 @@ void WinWindowHelper::startSystemMove() {
     }
 }
 
-void WinWindowHelper::startSystemResize(int edges) {
-    if (m_window) {
-        m_window->startSystemResize(static_cast<Qt::Edges>(edges));
-    }
+void WinWindowHelper::resizeFromGrip(int width, int height) {
+    if (!m_window || m_window->visibility() != QWindow::Windowed) return;
+    const QSize requested(width, height);
+    m_window->resize(requested.boundedTo(m_window->maximumSize()).expandedTo(m_window->minimumSize()));
 }
 
 void WinWindowHelper::minimizeWindow() {
@@ -461,20 +432,11 @@ bool WinWindowHelper::nativeEventFilter(const QByteArray& eventType, void* messa
         return false;
     }
 
-    if (msg->message == WM_WINDOWPOSCHANGED) {
-        syncBackdrop();
-    } else if (msg->message == WM_DPICHANGED) {
-        QTimer::singleShot(0, this, [this] {
-            syncInputRegion();
-            syncBackdrop();
-        });
-    } else if (m_backdrop != Backdrop::None && (msg->message == WM_DWMCOMPOSITIONCHANGED
-               || msg->message == WM_SETTINGCHANGE || msg->message == WM_THEMECHANGED)) {
-        QTimer::singleShot(0, this, [this] {
-            destroyBackdrop();
-            m_backdropUnavailable = false;
-            syncBackdrop();
-        });
+    if (msg->message == WM_DPICHANGED) {
+        QTimer::singleShot(0, this, &WinWindowHelper::syncInputRegion);
+    } else if (msg->message == WM_DISPLAYCHANGE
+               || (msg->message == WM_SETTINGCHANGE && msg->wParam == SPI_SETDESKWALLPAPER)) {
+        QTimer::singleShot(0, this, &WinWindowHelper::refreshWallpaper);
     }
 
     if (msg->message == WM_NCCALCSIZE && msg->wParam == TRUE) {

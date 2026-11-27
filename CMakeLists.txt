@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(super_booster VERSION 2.1.0 LANGUAGES CXX)
+project(super_booster VERSION 2.1.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -50,6 +50,14 @@ qt_add_executable(super_booster
     src/updater.h
 )
 
+if(BUILD_TESTING)
+    target_sources(super_booster PRIVATE tests/ui_layout.cpp tests/layout_verification.h)
+    target_compile_definitions(super_booster PRIVATE SUPER_BOOSTER_TEST_LAYOUT)
+    add_test(NAME ui_layout COMMAND super_booster --verify-layout)
+    set_tests_properties(ui_layout PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
+endif()
+
 target_compile_definitions(super_booster PRIVATE
     SUPER_BOOSTER_VERSION="${PROJECT_VERSION}"
     SUPER_BOOSTER_PUSH_URL="${SUPER_BOOSTER_PUSH_URL}"
@@ -59,6 +67,8 @@ qt_add_qml_module(super_booster
     URI SuperBoosterUI
     VERSION 1.0
     QML_FILES
+        qml/FractureLayout.js
+        qml/LineIcon.qml
         qml/Main.qml
         qml/MiniPopup.qml
         qml/AppearanceMenu.qml
@@ -67,7 +77,12 @@ qt_add_qml_module(super_booster
         qml/GlassSwitch.qml
         qml/BoostSlider.qml
         qml/UpdateNotice.qml
+    SOURCES
+        src/glass_face.h
+        src/glass_face.cpp
 )
+
+target_include_directories(super_booster PRIVATE src)
 
 qt_add_resources(super_booster "superbooster_icons"
     PREFIX "/icons"

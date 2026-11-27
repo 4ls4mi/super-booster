@@ -3,12 +3,14 @@
 #include <QObject>
 #include <QElapsedTimer>
 #include <QPointer>
+#include <QRect>
 #include <QTimer>
 #include <QVariantList>
 #include <QIcon>
 #include "windows_audio_route.h"
 
 class QQuickWindow;
+class QScreen;
 class QSystemTrayIcon;
 class QAction;
 class WinWindowHelper;
@@ -46,6 +48,7 @@ class AppBackend : public QObject {
     Q_PROPERTY(double masterVolume READ masterVolume NOTIFY masterVolumeChanged)
     Q_PROPERTY(bool startupNoticeVisible READ startupNoticeVisible NOTIFY startupNoticeVisibleChanged)
     Q_PROPERTY(QString appearanceMaterial READ appearanceMaterial WRITE setAppearanceMaterial NOTIFY appearanceMaterialChanged)
+    Q_PROPERTY(QRect mainWindowWorkArea READ mainWindowWorkArea NOTIFY mainWindowWorkAreaChanged)
 
 public:
     explicit AppBackend(WinWindowHelper* winHelper, bool screenshotMode, QObject* parent = nullptr);
@@ -109,6 +112,7 @@ public:
     bool startupNoticeVisible() const { return m_startupNoticeVisible; }
     QString appearanceMaterial() const { return m_appearanceMaterial; }
     void setAppearanceMaterial(const QString& material);
+    QRect mainWindowWorkArea() const;
 
     Q_INVOKABLE void toggleEngine();
     Q_INVOKABLE bool stopEngine();
@@ -148,6 +152,7 @@ signals:
     void masterVolumeChanged();
     void startupNoticeVisibleChanged();
     void appearanceMaterialChanged();
+    void mainWindowWorkAreaChanged();
     void updateNotificationClicked();
 
 private slots:
@@ -155,6 +160,7 @@ private slots:
     void pollSessions();
 
 private:
+    void watchWorkArea(QScreen* screen);
     void loadSettings();
     void startEngine();
     void setEngineState(bool active, bool starting);
@@ -172,6 +178,7 @@ private:
     WindowsAudioRoute m_windowsRoute;
     QPointer<QQuickWindow> m_mainWindow;
     QPointer<QQuickWindow> m_popupWindow;
+    QMetaObject::Connection m_workAreaConnection;
     QSystemTrayIcon* m_trayIcon = nullptr;
     bool m_updateNotificationPending = false;
     QAction* m_trayToggleAction = nullptr;
@@ -187,7 +194,7 @@ private:
     bool m_showTrayMsg = true;
     bool m_hotkeysEnabled = true;
     bool m_startupNoticeVisible = false;
-    QString m_appearanceMaterial = QStringLiteral("clear");
+    QString m_appearanceMaterial = QStringLiteral("frosted");
 
     QString m_selectedOutDevice;
     QString m_activeDirectOutput;

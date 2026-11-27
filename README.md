@@ -2,7 +2,7 @@
 
 Super Booster is a Windows desktop audio utility for amplifying and routing audio. It uses Windows Audio Session API (WASAPI) for capture and playback, a Rust audio engine for signal processing, and Qt Quick for the interface.
 
-![Super Booster’s shattered-glass layout and Appearance and Updates menu over a sample desktop backdrop](docs/screenshot.png)
+![Super Booster’s Frosted panels with the Appearance menu open on Windows](docs/screenshot.png)
 
 ## Install on Windows
 
@@ -16,13 +16,13 @@ Open **Settings → Apps**, select **Super Booster**, and choose **Uninstall**. 
 
 ### Appearance
 
-Open **Menu → Appearance** to change the material on the app’s glass panels. **Clear** is the default. Choose from **Clear**, **Acrylic**, **Mica**, **Blurred**, **Frosted**, and **Glassy**. The gaps between the panels stay open to the desktop. Native backdrop effects depend on your Windows version and transparency settings. The app uses its own tints and textures when those effects are unavailable.
+Open **Menu → Appearance** to choose **Clear**, **Acrylic**, **Mica**, **Blurred**, **Frosted**, or **Glassy**. Fresh installs start with **Frosted**. The app keeps your saved material preference when you update. The desktop stays visible through the seams, and each finish is clipped to the glass panels. **Blurred** samples the Windows wallpaper when available and uses a translucent finish otherwise.
 
 ### App updates
 
 To download and install updates in the background, open **Menu → Updates** and turn on **Automatically install updates**. It’s off by default. Super Booster waits for its window to be hidden or minimized and for audio to be idle before installing. The verified update installs without an installer window or an update pop-up.
 
-Open **Menu → Settings → Updates** to check manually, turn off background checks, or choose how update notifications appear. When an update alert appears, use **Remind me** to defer it for an hour or **Dismiss** to hide it for that version. You can open the update details to read the release notes and apply the verified installer yourself.
+Open **Menu → Settings → Updates** to check manually, open GitHub Releases, turn off background checks, or choose how update notifications appear. When an update alert appears, use **Later** to defer it for an hour or the close button to dismiss that version. Choose **Update** to read the release notes and apply the verified installer.
 
 Super Booster listens for release alerts while it is open, including in the system tray, and checks for missed releases at startup. Updates preserve the installed folder, existing shortcuts, and settings.
 
@@ -35,7 +35,7 @@ Both modes offer gain up to 500%, a soft limiter, and live signal meters and spe
 
 ## Build from source
 
-The [Windows installer workflow](../../actions/workflows/windows.yml) compiles the app, runs the audio tests, and verifies the installer on a GitHub-hosted Windows runner. Download the installer artifact from any successful run.
+The [Windows installer workflow](../../actions/workflows/windows.yml) compiles the app, runs the audio and layout tests, and verifies the installer on a GitHub-hosted Windows runner. Download the installer artifact from any successful run.
 
 Use PowerShell on 64-bit Windows with Qt 6.8.3 for MinGW (including Qt WebSockets), MinGW 13.1, Ninja, CMake 3.21 or newer, and Rust. Adjust the Qt paths if it is installed elsewhere.
 
@@ -71,7 +71,7 @@ Copy-Item build/super_booster_update_helper.exe dist/app/
   Set-Content dist/app/qt.conf -Encoding ascii
 Copy-Item third-party dist/app/ -Recurse
 ./packaging/Build-Installer.ps1 -StageDirectory dist/app -OutputDirectory dist `
-  -Version 2.1.0 -IsccPath 'C:/path/to/ISCC.exe'
+  -Version 2.1.1 -IsccPath 'C:/path/to/ISCC.exe'
 ```
 
 Qt, MinGW, and Rust dependency notices are in [third-party](third-party/README.md), along with corresponding Qt source links.
