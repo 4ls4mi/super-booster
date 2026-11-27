@@ -1,5 +1,6 @@
 #include "app_backend.h"
 #include "audio_ffi.h"
+#include "playback_selection.h"
 #include "win_window_helper.h"
 
 #include <QAction>
@@ -40,12 +41,16 @@ AppBackend::AppBackend(WinWindowHelper* winHelper, bool screenshotMode, QObject*
     }
 
     loadSettings();
-    const bool recoveredRoute = !m_screenshotMode && m_windowsRoute.recover();
-    const bool resumeBoost = m_engineActive && !recoveredRoute;
+    const auto recovery = m_screenshotMode ? WindowsAudioRoute::Recovery::None : m_windowsRoute.recover();
+    const bool resumeBoost = m_engineActive && recovery == WindowsAudioRoute::Recovery::None;
     m_engineActive = false;
     refreshDevices();
+    if (m_directMode && m_selectedSourceDevice.isEmpty() &&
+        !PlaybackSelection::digitalSource(m_outputDevices, directOutputId(), true).isEmpty()) {
+        m_selectedSourceDevice = QString::fromLatin1(DIGITAL_SOURCE);
+    }
     refreshSessions();
-    m_masterVolume = std::round(static_cast<double>(sb_get_master_volume(nullptr)) * 100.0);
+    m_masterVolume = std::round(static_cast<double>(sb_get_master_volume(masterOutputId().constData())) * 100.0);
 
     if (m_directMode) m_volume = std::max(100.0, m_volume);
     sb_set_gain_percent(static_cast<float>(m_volume));
@@ -55,6 +60,8 @@ AppBackend::AppBackend(WinWindowHelper* winHelper, bool screenshotMode, QObject*
 
     if (!m_screenshotMode && resumeBoost) {
         startEngine();
+    } else if (recovery == WindowsAudioRoute::Recovery::Unavailable) {
+        m_statusMessage = QStringLiteral("Windows playback could not be restored. Close other copies of Super Booster and check Windows Sound settings.");
     } else {
         m_statusMessage = m_directMode
             ? QStringLiteral("Ready — System Audio Boost")
@@ -311,7 +318,13 @@ void AppBackend::setSelectedSourceDevice(const QString& id) {
 
 void AppBackend::startEngine() {
     if (engineRequested() && !stopEngine()) return;
-    if (m_directMode) refreshDevices();
+    if (m_directMode && m_selectedSourceDevice == DIGITAL_SOURCE &&
+        m_windowsRoute.recover() == WindowsAudioRoute::Recovery::Unavailable) {
+        m_statusMessage = QStringLiteral("Windows playback could not be restored. Close other copies of Super Booster and check Windows Sound settings.");
+        emit statusMessageChanged();
+        return;
+    }
+    refreshDevices();
     const QString issue = audioSetupIssue();
     if (!issue.isEmpty()) {
         m_statusMessage = issue;
@@ -327,7 +340,12 @@ void AppBackend::startEngine() {
         ? (m_pendingDigitalSource.isEmpty() ? m_selectedSourceDevice : m_pendingDigitalSource)
         : m_selectedInDevice).toUtf8();
     m_activeDirectOutput = m_directMode ? directOutputId() : QString();
-    const QByteArray outUtf8 = (m_directMode ? m_activeDirectOutput : m_selectedOutDevice).toUtf8();
+    QString output = m_activeDirectOutput;
+    if (!m_directMode) {
+        output = PlaybackSelection::available(m_outputDevices, m_selectedOutDevice)
+            ? m_selectedOutDevice : m_windowsOutput.value("id").toString();
+    }
+    const QByteArray outUtf8 = output.toUtf8();
     const bool starting = sb_start_engine(m_directMode, inUtf8.constData(), outUtf8.constData());
 
     char* rawStatus = sb_get_status_message();
@@ -412,9 +430,22 @@ void AppBackend::refreshDevices() {
 }
 
 QString AppBackend::directOutputId() const {
-    if (!m_selectedOutDevice.isEmpty()) return m_selectedOutDevice;
-    if (m_windowsRoute.active()) return m_activeDirectOutput;
-    return m_windowsOutput.value("id").toString();
+    if (m_windowsRoute.active() && PlaybackSelection::available(m_outputDevices, m_activeDirectOutput))
+        return m_activeDirectOutput;
+    const QString capture = m_selectedSourceDevice == DIGITAL_SOURCE ? QString() : m_selectedSourceDevice;
+    return PlaybackSelection::output(m_outputDevices, m_selectedOutDevice, capture);
+}
+
+QString AppBackend::automaticPlaybackOutputName() const {
+    if (!m_directMode) return m_windowsOutput.value("name").toString();
+    const QString capture = m_selectedSourceDevice == DIGITAL_SOURCE ? QString() : m_selectedSourceDevice;
+    const QString output = m_windowsRoute.active() && m_selectedOutDevice.isEmpty()
+        ? directOutputId() : PlaybackSelection::output(m_outputDevices, {}, capture);
+    for (const auto& entry : m_outputDevices) {
+        const auto device = entry.toMap();
+        if (device.value("id").toString() == output) return device.value("name").toString();
+    }
+    return {};
 }
 
 QString AppBackend::windowsOutputName() const {
@@ -430,15 +461,7 @@ QString AppBackend::windowsOutputName() const {
 
 QString AppBackend::digitalSourceId() const {
     if (m_windowsRoute.active()) return m_windowsRoute.source();
-    const QString output = directOutputId();
-    const QString currentDefault = m_windowsOutput.value("id").toString();
-    for (const QVariant& entry : m_outputDevices) {
-        const auto device = entry.toMap();
-        const auto id = device.value("id").toString();
-        if (device.value("isDigital").toBool() && !id.isEmpty() && id != output && id != currentDefault)
-            return id;
-    }
-    return {};
+    return PlaybackSelection::digitalSource(m_outputDevices, directOutputId());
 }
 
 QString AppBackend::digitalSourceName() const {
@@ -456,22 +479,16 @@ QByteArray AppBackend::masterOutputId() const {
 
 QString AppBackend::audioSetupIssue() const {
     if (!m_directMode) return {};
-    const auto isAvailable = [this](const QString& id) {
-        return !id.isEmpty() && std::any_of(m_outputDevices.cbegin(), m_outputDevices.cend(),
-            [&id](const QVariant& entry) { return entry.toMap().value("id").toString() == id; });
-    };
     const QString outputId = directOutputId();
-    if (!isAvailable(outputId))
-        return m_selectedOutDevice.isEmpty()
-            ? QStringLiteral("Windows has no default playback device. Connect or select your speakers or headphones.")
-            : QStringLiteral("Your saved playback device is unavailable. Choose Windows default or another device.");
+    if (!PlaybackSelection::available(m_outputDevices, outputId))
+        return QStringLiteral("No suitable playback device was found. Connect or select your speakers or headphones.");
     if (m_selectedSourceDevice.isEmpty())
         return QStringLiteral("Choose Automatic Digital Output or another silent audio source.");
     if (m_selectedSourceDevice == DIGITAL_SOURCE)
         return digitalSourceId().isEmpty()
             ? QStringLiteral("Automatic routing needs an enabled digital audio output and separate speakers or headphones.")
             : QString();
-    if (!isAvailable(m_selectedSourceDevice))
+    if (!PlaybackSelection::available(m_outputDevices, m_selectedSourceDevice))
         return QStringLiteral("Your saved audio source is unavailable. Choose a silent audio source.");
     if (outputId == m_selectedSourceDevice)
         return QStringLiteral("Choose different devices for the silent source and playback.");
@@ -617,7 +634,13 @@ void AppBackend::pollSessions() {
     if (!m_screenshotMode) {
         refreshDevices();
         if (m_windowsRoute.active()) {
-            if (m_windowsOutput.value("id").toString() != m_windowsRoute.source()) stopEngine();
+            const QString source = m_windowsRoute.source();
+            const bool consoleChanged = std::any_of(m_outputDevices.cbegin(), m_outputDevices.cend(), [&source](const QVariant& entry) {
+                const auto endpoint = entry.toMap();
+                return endpoint.value("isConsoleDefault").toBool() && endpoint.value("id").toString() != source;
+            });
+            if (m_windowsOutput.value("id").toString() != source || consoleChanged ||
+                !PlaybackSelection::available(m_outputDevices, m_activeDirectOutput)) stopEngine();
         } else if (m_directMode && engineRequested() && directOutputId() != m_activeDirectOutput) {
             startEngine();
         }

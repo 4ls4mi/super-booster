@@ -76,11 +76,12 @@ WindowsAudioRoute::WindowsAudioRoute(const QString& recoveryPath)
     m_lock.setStaleLockTime(0);
 }
 
-bool WindowsAudioRoute::recover() {
-    if (!QFile::exists(m_recoveryPath) || !m_lock.tryLock()) return false;
-    restore();
+WindowsAudioRoute::Recovery WindowsAudioRoute::recover() {
+    if (!QFile::exists(m_recoveryPath)) return Recovery::None;
+    if (!m_lock.tryLock()) return Recovery::Unavailable;
+    const bool restored = !QFile::exists(m_recoveryPath) || restore();
     m_lock.unlock();
-    return true;
+    return restored ? Recovery::Restored : Recovery::Unavailable;
 }
 
 bool WindowsAudioRoute::start(const QString& source) {
@@ -94,7 +95,7 @@ bool WindowsAudioRoute::start(const QString& source) {
     QJsonArray previous;
     for (const ERole role : mediaRoles) {
         const QString id = policy.defaultId(role);
-        if (id.isEmpty() || id == source) {
+        if (id.isEmpty()) {
             m_lock.unlock();
             return false;
         }
@@ -113,8 +114,10 @@ bool WindowsAudioRoute::start(const QString& source) {
     }
 
     m_source = source;
-    for (const ERole role : mediaRoles) {
-        if (!policy.setDefault(source, role) || policy.defaultId(role) != source) {
+    for (qsizetype i = 0; i < previous.size(); ++i) {
+        const ERole role = mediaRoles[i];
+        if ((previous.at(i).toString() != source && !policy.setDefault(source, role)) ||
+            policy.defaultId(role) != source) {
             stop();
             return false;
         }
@@ -141,12 +144,13 @@ bool WindowsAudioRoute::restore() {
 
     const AudioPolicy policy;
     bool restored = true;
-    for (int i = 0; i < previous.size(); ++i) {
+    for (qsizetype i = 0; i < previous.size(); ++i) {
+        const QString id = previous.at(i).toString();
+        if (id == source) continue;
         const QString current = policy.defaultId(mediaRoles[i]);
         if (current.isEmpty()) restored = false;
         if (current != source) continue;
-        const QString id = previous.at(i).toString();
-        if (id.isEmpty() || id == source || !policy.setDefault(id, mediaRoles[i])
+        if (id.isEmpty() || !policy.setDefault(id, mediaRoles[i])
                 || policy.defaultId(mediaRoles[i]) != id) {
             restored = false;
         }

@@ -836,10 +836,10 @@ Window {
                             Layout.fillWidth: true
                             Layout.minimumWidth: 0
                             model: {
-                                const name = backend.windowsOutputName
+                                const name = backend.automaticPlaybackOutputName
                                 const devices = [{ id: "", name: name
-                                    ? "Windows default (" + name + ")"
-                                    : "Windows default (no device detected)" }]
+                                    ? "Automatic playback (" + name + ")"
+                                    : "Automatic playback (no suitable device)" }]
                                 for (const device of backend.outputDevices) devices.push(device)
                                 return devices
                             }
@@ -851,7 +851,11 @@ Window {
                                 }
                                 return -1
                             }
-                            displayText: currentIndex < 0 ? "Saved device unavailable" : currentText
+                            displayText: currentIndex < 0
+                                ? (backend.automaticPlaybackOutputName
+                                    ? "Using " + backend.automaticPlaybackOutputName + " (saved device unavailable)"
+                                    : "Saved device unavailable")
+                                : currentText
                             ToolTip.visible: hovered && displayText !== ""
                             ToolTip.text: displayText
                             onActivated: backend.selectedOutDevice = currentValue

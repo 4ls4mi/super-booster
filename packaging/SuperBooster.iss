@@ -65,7 +65,7 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExecutable}"; WorkingDir
 Root: HKCU; Subkey: "{#OwnerRegistryKey}"; ValueType: string; ValueName: "OwnedDirectory"; ValueData: "{app}"; Flags: uninsdeletevalue uninsdeletekeyifempty; Check: CanMarkOwnedDirectory
 
 [Run]
-Filename: "{app}\{#AppExecutable}"; WorkingDir: "{app}"; Tasks: taskbarhelp; Flags: nowait runasoriginaluser skipifsilent; AfterInstall: ShowTaskbarPinInstruction
+Filename: "{app}\{#AppExecutable}"; Description: "{cm:LaunchProgram,{#AppName}}"; WorkingDir: "{app}"; Flags: postinstall nowait runasoriginaluser skipifsilent; AfterInstall: ShowTaskbarPinInstruction
 
 [Code]
 const
@@ -191,7 +191,8 @@ end;
 
 procedure ShowTaskbarPinInstruction;
 begin
-  SuppressibleMsgBox(CustomMessage('TaskbarPinHelp'), mbInformation, MB_OK, IDOK);
+  if WizardIsTaskSelected('taskbarhelp') then
+    SuppressibleMsgBox(CustomMessage('TaskbarPinHelp'), mbInformation, MB_OK, IDOK);
 end;
 
 function HasPurgeArgument: Boolean;

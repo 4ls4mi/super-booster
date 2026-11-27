@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(super_booster VERSION 2.0.2 LANGUAGES CXX)
+project(super_booster VERSION 2.0.3 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -7,6 +7,14 @@ set(CMAKE_AUTOMOC ON)
 
 find_package(Qt6 6.8 REQUIRED COMPONENTS Core Gui Widgets Quick Qml QuickControls2 ShaderTools Network WebSockets)
 qt_standard_project_setup(REQUIRES 6.5)
+
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(playback_selection_test tests/playback_selection.cpp)
+    target_include_directories(playback_selection_test PRIVATE src)
+    target_link_libraries(playback_selection_test PRIVATE Qt6::Core)
+    add_test(NAME playback_selection COMMAND playback_selection_test)
+endif()
 
 set(SUPER_BOOSTER_PUSH_URL "wss://super-booster-release-push.auralis-updates.workers.dev/events"
     CACHE STRING "WebSocket used to announce Super Booster releases")

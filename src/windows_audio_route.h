@@ -5,8 +5,10 @@
 
 class WindowsAudioRoute {
 public:
+    enum class Recovery { None, Restored, Unavailable };
+
     explicit WindowsAudioRoute(const QString& recoveryPath);
-    bool recover();
+    Recovery recover();
     bool start(const QString& source);
     bool stop();
     bool active() const { return !m_source.isEmpty(); }

@@ -11,13 +11,13 @@ use windows::Win32::Foundation::{
 use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
 use windows::Win32::Media::Audio::Endpoints::IAudioMeterInformation;
 use windows::Win32::Media::Audio::{
-    eCapture, eConsole, eRender,
+    eCapture, eCommunications, eConsole, eMultimedia, eRender, Handset, Headphones, Headset,
     IAudioCaptureClient, IAudioClient, IAudioRenderClient,
     IAudioSessionControl2, IAudioSessionManager2, IMMDevice, IMMDeviceEnumerator,
     ISimpleAudioVolume, MMDeviceEnumerator, AUDCLNT_BUFFERFLAGS_SILENT,
     AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM,
     AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY, AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
-    AUDCLNT_STREAMFLAGS_LOOPBACK, DEVICE_STATE_ACTIVE, PKEY_AudioEndpoint_FormFactor, SPDIF,
+    AUDCLNT_STREAMFLAGS_LOOPBACK, DEVICE_STATE_ACTIVE, PKEY_AudioEndpoint_FormFactor, Speakers, SPDIF,
     WAVEFORMATEX,
 };
 use windows::Win32::System::Com::{
@@ -142,16 +142,22 @@ pub fn list_devices_json() -> String {
             return r#"{"outputs":[],"inputs":[]}"#.to_string();
         };
 
-        let def_out_id = enumerator
-            .GetDefaultAudioEndpoint(eRender, eConsole)
-            .ok()
-            .map(|d| device_id(&d))
-            .unwrap_or_default();
-        let def_in_id = enumerator
-            .GetDefaultAudioEndpoint(eCapture, eConsole)
-            .ok()
-            .map(|d| device_id(&d))
-            .unwrap_or_default();
+        let default_id = |flow, role| {
+            enumerator
+                .GetDefaultAudioEndpoint(flow, role)
+                .ok()
+                .map(|device| device_id(&device))
+                .unwrap_or_default()
+        };
+        let console_out = default_id(eRender, eConsole);
+        let multimedia_out = default_id(eRender, eMultimedia);
+        let communications_out = default_id(eRender, eCommunications);
+        let media_out = if multimedia_out.is_empty() {
+            &console_out
+        } else {
+            &multimedia_out
+        };
+        let console_in = default_id(eCapture, eConsole);
 
         let collect = |flow, def_id: &str| -> Vec<String> {
             let mut items = Vec::new();
@@ -161,18 +167,37 @@ pub fn list_devices_json() -> String {
                     if let Ok(dev) = coll.Item(i) {
                         let id = device_id(&dev);
                         let name = device_friendly_name(&dev);
-                        let is_def = !id.is_empty() && id == def_id;
-                        let is_spdif = flow == eRender && dev.OpenPropertyStore(STGM_READ)
-                            .and_then(|store| store.GetValue(&PKEY_AudioEndpoint_FormFactor))
-                            .ok()
-                            .and_then(|value| u32::try_from(&value).ok())
-                            == Some(SPDIF.0 as u32);
+                        let matches_default = |default: &str| !id.is_empty() && id == default;
+                        let is_default = matches_default(def_id);
+                        let endpoint_fields = if flow == eRender {
+                            let form_factor = dev
+                                .OpenPropertyStore(STGM_READ)
+                                .and_then(|store| store.GetValue(&PKEY_AudioEndpoint_FormFactor))
+                                .ok()
+                                .and_then(|value| u32::try_from(&value).ok());
+                            let is_digital = form_factor == Some(SPDIF.0 as u32);
+                            let is_physical = [Speakers, Headphones, Headset, Handset]
+                                .iter()
+                                .any(|factor| form_factor == Some(factor.0 as u32));
+                            format!(
+                                concat!(
+                                    r#","isDigital":{is_digital},"isPhysicalPlayback":{is_physical}"#,
+                                    r#","isConsoleDefault":{},"isMultimediaDefault":{}"#,
+                                    r#","isCommunicationsDefault":{}"#
+                                ),
+                                matches_default(&console_out),
+                                matches_default(&multimedia_out),
+                                matches_default(&communications_out),
+                                is_digital = is_digital,
+                                is_physical = is_physical,
+                            )
+                        } else {
+                            r#","isDigital":false"#.to_owned()
+                        };
                         items.push(format!(
-                            r#"{{"id":"{}","name":"{}","isDefault":{},"isDigital":{}}}"#,
+                            r#"{{"id":"{}","name":"{}","isDefault":{is_default}{endpoint_fields}}}"#,
                             json_escape(&id),
                             json_escape(&name),
-                            is_def,
-                            is_spdif
                         ));
                     }
                 }
@@ -180,8 +205,8 @@ pub fn list_devices_json() -> String {
             items
         };
 
-        let outs = collect(eRender, &def_out_id);
-        let ins = collect(eCapture, &def_in_id);
+        let outs = collect(eRender, media_out);
+        let ins = collect(eCapture, &console_in);
         format!(
             r#"{{"outputs":[{}],"inputs":[{}]}}"#,
             outs.join(","),

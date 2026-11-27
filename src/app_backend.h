@@ -32,6 +32,7 @@ class AppBackend : public QObject {
     Q_PROPERTY(QVariantList outputDevices READ outputDevices NOTIFY devicesChanged)
     Q_PROPERTY(QVariantList inputDevices READ inputDevices NOTIFY devicesChanged)
     Q_PROPERTY(QString windowsOutputName READ windowsOutputName NOTIFY devicesChanged)
+    Q_PROPERTY(QString automaticPlaybackOutputName READ automaticPlaybackOutputName NOTIFY audioSetupIssueChanged)
     Q_PROPERTY(QString digitalSourceName READ digitalSourceName NOTIFY audioSetupIssueChanged)
     Q_PROPERTY(QVariantList audioSessions READ audioSessions NOTIFY sessionsChanged)
     Q_PROPERTY(QString statusMessage READ statusMessage NOTIFY statusMessageChanged)
@@ -91,6 +92,7 @@ public:
     QVariantList outputDevices() const { return m_outputDevices; }
     QVariantList inputDevices() const { return m_inputDevices; }
     QString windowsOutputName() const;
+    QString automaticPlaybackOutputName() const;
     QString digitalSourceName() const;
     QVariantList audioSessions() const { return m_audioSessions; }
     QString statusMessage() const { return m_statusMessage; }
