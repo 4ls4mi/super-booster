@@ -1,0 +1,12 @@
+name = "super-booster-release-push"
+main = "worker.mjs"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+[[durable_objects.bindings]]
+name = "RELEASE_HUB"
+class_name = "ReleaseHub"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ReleaseHub"]
