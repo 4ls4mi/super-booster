@@ -22,6 +22,8 @@ class Updater : public QObject {
     Q_PROPERTY(double progress READ progress NOTIFY progressChanged)
     Q_PROPERTY(QString error READ error NOTIFY stateChanged)
     Q_PROPERTY(bool automatic READ automatic WRITE setAutomatic NOTIFY preferencesChanged)
+    Q_PROPERTY(bool autoInstallUpdates READ autoInstallUpdates WRITE setAutoInstallUpdates NOTIFY preferencesChanged)
+    Q_PROPERTY(bool backgroundInstallAllowed READ backgroundInstallAllowed WRITE setBackgroundInstallAllowed NOTIFY backgroundInstallAllowedChanged)
     Q_PROPERTY(QString notificationMode READ notificationMode WRITE setNotificationMode NOTIFY preferencesChanged)
     Q_PROPERTY(bool supported READ supported CONSTANT)
 
@@ -35,9 +37,13 @@ public:
     QString error() const { return m_error; }
     double progress() const { return m_progress; }
     bool automatic() const;
+    bool autoInstallUpdates() const;
+    bool backgroundInstallAllowed() const { return m_backgroundInstallAllowed; }
     QString notificationMode() const;
     bool supported() const;
     void setAutomatic(bool enabled);
+    void setAutoInstallUpdates(bool enabled);
+    void setBackgroundInstallAllowed(bool allowed);
     void setNotificationMode(const QString& mode);
 
     Q_INVOKABLE void check();
@@ -51,6 +57,7 @@ signals:
     void stateChanged();
     void progressChanged();
     void preferencesChanged();
+    void backgroundInstallAllowedChanged();
     void offerAvailable();
     void nativeNotificationRequested(const QString& version);
     void showDetailsRequested();
@@ -73,9 +80,12 @@ private:
     void checkRelease(bool manual);
     void requestRelease(const QUrl& url, bool manual, bool fallback, int redirects = 0);
     static Release parseRelease(const QByteArray& payload, const QString& installed, bool& valid);
+    void handleVerifiedRelease();
+    bool checksEnabled() const;
     void offerRelease();
     void scheduleReminder();
     void requestInstaller(const QUrl& url, int redirects);
+    void beginInstall(bool background);
     void discardDownload();
     void setState(const QString& state, const QString& error = {});
     void setProgress(double progress);
@@ -98,7 +108,9 @@ private:
     int m_hintChecks = 0;
     int m_reconnectDelay = 2000;
     bool m_started = false;
+    bool m_backgroundInstallAllowed = false;
     bool m_handoffStarted = false;
+    bool m_helperStaged = false;
     double m_progress = 0;
     std::unique_ptr<QTemporaryDir> m_staging;
     std::unique_ptr<QSaveFile> m_installer;

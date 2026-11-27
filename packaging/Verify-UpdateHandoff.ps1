@@ -10,8 +10,8 @@ if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hoste
     throw 'The upgrade verification requires a fresh GitHub-hosted Windows profile.'
 }
 
-$previousVersion = '2.0.1'
-$previousSha256 = 'A7FD81DAF3918CBF66F93DAE80F6C6C2D71C08EDD795723AEFF4EBADAD9319CF'
+$previousVersion = '2.0.3'
+$previousSha256 = 'C4F937C803A6043C933D1ACD24547E59DD8E51601CCDE33017FAEB1112B29E4E'
 $candidate = Get-Item -LiteralPath $InstallerPath
 if ($candidate.Name -cnotmatch '^SuperBooster-([0-9]+\.[0-9]+\.[0-9]+)-windows-x64-setup\.exe$') {
     throw 'The candidate installer filename does not match its release.'
@@ -42,6 +42,8 @@ $scratch = New-Item -ItemType Directory -Path (Join-Path $work.FullName 'update 
 $priorInstaller = Join-Path $work.FullName "SuperBooster-$previousVersion-windows-x64-setup.exe"
 $ready = Join-Path $scratch.FullName 'update-ready'
 $confirmed = Join-Path $scratch.FullName 'update-confirm'
+$cancel = Join-Path $scratch.FullName 'update-cancel'
+$cancelled = Join-Path $scratch.FullName 'update-cancelled'
 $errorMarker = Join-Path $scratch.FullName 'update-error.txt'
 $setupLog = Join-Path $scratch.FullName 'setup.log'
 $cleanupLog = Join-Path $work.FullName 'uninstall.log'
@@ -92,6 +94,19 @@ function Assert-DesktopOnly {
     } finally { [void] [Runtime.InteropServices.Marshal]::ReleaseComObject($shell) }
 }
 
+function Wait-ForHandoffReadiness([Diagnostics.Process] $Helper) {
+    Wait-ForCondition {
+        if ($Helper.HasExited -or $oldProcess.HasExited -or (Test-Path -LiteralPath $errorMarker)) {
+            throw 'The handoff or prior-release process stopped before readiness.'
+        }
+        Test-Path -LiteralPath $ready -PathType Leaf
+    } 30 'The helper did not signal readiness.'
+    if ((Test-Path -LiteralPath $setupLog) -or
+        (Get-ItemPropertyValue -LiteralPath $registry -Name DisplayVersion) -cne $previousVersion) {
+        throw 'Setup began before the fixture had confirmed and exited.'
+    }
+}
+
 try {
     $previousUrl = "https://github.com/4ls4mi/super-booster/releases/download/v$previousVersion/SuperBooster-$previousVersion-windows-x64-setup.exe"
     Invoke-WebRequest -Uri $previousUrl -OutFile $priorInstaller -MaximumRedirection 3
@@ -132,7 +147,7 @@ try {
     Copy-Item -LiteralPath $sourceHelper -Destination $helperCopy
     $candidateDigest = (Get-FileHash -LiteralPath $candidate.FullName).Hash.ToLowerInvariant()
     $handoffArgs = @([string] $oldProcess.Id, ('"{0}"' -f $installDir),
-        ('"{0}"' -f $candidateCopy), $candidateDigest, [string] $candidate.Length, $expectedVersion)
+        ('"{0}"' -f $candidateCopy), $candidateDigest, [string] $candidate.Length, $expectedVersion, '--background')
     $startHelperOptions = @{
         FilePath = $helperCopy
         ArgumentList = $handoffArgs
@@ -141,17 +156,18 @@ try {
         PassThru = $true
     }
     $handoff = Start-Process @startHelperOptions
-
-    Wait-ForCondition {
-        if ($handoff.HasExited -or $oldProcess.HasExited -or (Test-Path -LiteralPath $errorMarker)) {
-            throw 'The handoff or prior-release process stopped before readiness.'
-        }
-        Test-Path -LiteralPath $ready -PathType Leaf
-    } 30 'The helper did not signal readiness.'
-    if ((Test-Path -LiteralPath $setupLog) -or
-        (Get-ItemPropertyValue -LiteralPath $registry -Name DisplayVersion) -cne $previousVersion) {
-        throw 'Setup began before the fixture had confirmed and exited.'
+    Wait-ForHandoffReadiness $handoff
+    Set-Content -LiteralPath $cancel -Value 'cancelled' -Encoding ascii
+    Wait-ForProcess $handoff 15 'Deferred background update helper'
+    if (-not (Test-Path -LiteralPath $cancelled) -or (Test-Path -LiteralPath $setupLog) -or $oldProcess.HasExited) {
+        throw 'Deferring a background update should keep the installed app running without launching setup.'
     }
+    $handoff.Dispose()
+    $handoff = $null
+    Remove-Item -LiteralPath $ready, $cancel, $cancelled
+
+    $handoff = Start-Process @startHelperOptions
+    Wait-ForHandoffReadiness $handoff
     Set-Content -LiteralPath $confirmed -Value 'confirmed' -NoNewline -Encoding ascii
     # The fixture exposes no noninteractive Quit command. Stop only its exact process handle.
     $oldProcess.Kill()
@@ -171,8 +187,15 @@ try {
             throw 'The upgrade did not preserve settings or audio routing data.'
         }
     }
-    Wait-ForCondition { [bool](Get-FixtureProcesses | Select-Object -First 1) } 15 'The helper did not relaunch the installed application.'
-    'Passed pinned baseline upgrade, verified handoff, new executable, relaunch, and preserved shortcut and settings.'
+    Wait-ForCondition {
+        $newProcess = Get-FixtureProcesses | Select-Object -First 1
+        if (-not $newProcess) { return $false }
+        try {
+            $child = Get-CimInstance -ClassName Win32_Process -Filter "ProcessId = $($newProcess.Id)"
+            $child.CommandLine -match '(?<!\S)--minimized(?!\S)' -and $newProcess.MainWindowHandle -eq [IntPtr]::Zero
+        } finally { $newProcess.Dispose() }
+    } 15 'The background helper did not relaunch the installed application hidden.'
+    'Passed pinned baseline upgrade, deferred and verified silent handoff, hidden relaunch, and preserved shortcut and settings.'
 } catch {
     if (Test-Path -LiteralPath $errorMarker) { Write-Host (Get-Content -LiteralPath $errorMarker -Raw) }
     if (Test-Path -LiteralPath $setupLog) { Get-Content -LiteralPath $setupLog -Tail 12 | Write-Host }

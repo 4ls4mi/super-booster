@@ -15,8 +15,10 @@ Window {
     readonly property bool busy: updateState === "checking" || updateState === "downloading"
                                  || updateState === "installing"
     readonly property bool canOffer: Boolean(service?.automatic) && Boolean(service?.supported)
+                                     && !service.autoInstallUpdates
                                      && service.notificationMode !== "quiet"
                                      && (updateState === "available" || updateState === "ready")
+    readonly property bool detailsVisible: details.visible && details.visibility !== Window.Minimized
     readonly property string statusText: {
         if (!service?.supported)
             return qsTr("In-app updates are unavailable for this copy.")
@@ -25,8 +27,10 @@ Window {
         case "current": return qsTr("Super Booster is up to date.")
         case "available": return qsTr("Version %1 is available.").arg(service.version)
         case "downloading": return qsTr("Downloading version %1…").arg(service.version)
-        case "ready": return qsTr("Version %1 is ready to install.").arg(service.version)
-        case "installing": return qsTr("Starting the Windows installer…")
+        case "ready": return service.autoInstallUpdates
+            ? qsTr("Version %1 will install when Super Booster is idle.").arg(service.version)
+            : qsTr("Version %1 is ready to install.").arg(service.version)
+        case "installing": return qsTr("Installing the update…")
         case "error": return qsTr("The update could not be completed.")
         default: return qsTr("Ready to check for updates.")
         }

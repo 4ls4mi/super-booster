@@ -1,11 +1,11 @@
 cmake_minimum_required(VERSION 3.21)
-project(super_booster VERSION 2.0.3 LANGUAGES CXX)
+project(super_booster VERSION 2.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
-find_package(Qt6 6.8 REQUIRED COMPONENTS Core Gui Widgets Quick Qml QuickControls2 ShaderTools Network WebSockets)
+find_package(Qt6 6.8 REQUIRED COMPONENTS Core Gui Widgets Quick Qml QuickControls2 Network WebSockets)
 qt_standard_project_setup(REQUIRES 6.5)
 
 include(CTest)
@@ -61,7 +61,10 @@ qt_add_qml_module(super_booster
     QML_FILES
         qml/Main.qml
         qml/MiniPopup.qml
-        qml/GlassCard.qml
+        qml/AppearanceMenu.qml
+        qml/BoostView.qml
+        qml/GlassShard.qml
+        qml/GlassSwitch.qml
         qml/BoostSlider.qml
         qml/UpdateNotice.qml
 )
@@ -70,14 +73,6 @@ qt_add_resources(super_booster "superbooster_icons"
     PREFIX "/icons"
     BASE assets
     FILES assets/super-booster.ico
-)
-
-qt_add_shaders(super_booster "superbooster_shaders"
-    PREFIX "/"
-    FILES
-        shaders/glass_backdrop.frag
-        shaders/audio_orb.frag
-        shaders/spectrum_glow.frag
 )
 
 target_link_libraries(super_booster PRIVATE
@@ -105,6 +100,7 @@ if(WIN32)
         OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/assets/super-booster.ico")
     target_link_libraries(super_booster PRIVATE
         dwmapi
+        gdi32
         advapi32
         user32
         kernel32

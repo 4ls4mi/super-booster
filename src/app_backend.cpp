@@ -17,6 +17,7 @@
 #include <QPixmap>
 #include <QPolygonF>
 #include <QQuickWindow>
+#include <QSaveFile>
 #include <QScreen>
 #include <QSystemTrayIcon>
 #include <QtMath>
@@ -29,6 +30,12 @@ constexpr int SPECTRUM_COUNT = 24;
 constexpr auto DIGITAL_SOURCE = "windows-digital";
 constexpr float AUDIBLE_PEAK = 0.0001f;
 constexpr int DIGITAL_HANDOFF_TIMEOUT_MS = 2500;
+
+bool isAppearanceMaterial(const QString& material) {
+    return material == QLatin1String("clear") || material == QLatin1String("acrylic") ||
+           material == QLatin1String("mica") || material == QLatin1String("blurred") ||
+           material == QLatin1String("frosted") || material == QLatin1String("glassy");
+}
 }
 
 AppBackend::AppBackend(WinWindowHelper* winHelper, bool screenshotMode, QObject* parent)
@@ -108,11 +115,20 @@ void AppBackend::setWindows(QQuickWindow* mainWindow, QQuickWindow* popupWindow)
     m_mainWindow = mainWindow;
     m_popupWindow = popupWindow;
 
-    if (m_mainWindow && m_winW >= 540 && m_winH >= 400) {
-        m_mainWindow->resize(m_winW, m_winH);
-        if (m_winX >= 0 && m_winY >= 0) {
-            m_mainWindow->setPosition(m_winX, m_winY);
-        }
+    if (!m_mainWindow || m_screenshotMode) return;
+
+    const QPoint savedPosition(m_winX, m_winY);
+    QScreen* screen = m_hasWindowPosition ? QGuiApplication::screenAt(savedPosition) : nullptr;
+    if (!screen) screen = m_mainWindow->screen();
+    if (!screen) return;
+
+    const QRect available = screen->availableGeometry();
+    const int width = std::clamp(m_winW, std::min(m_mainWindow->minimumWidth(), available.width()), available.width());
+    const int height = std::clamp(m_winH, std::min(m_mainWindow->minimumHeight(), available.height()), available.height());
+    m_mainWindow->resize(width, height);
+    if (m_hasWindowPosition && available.contains(savedPosition)) {
+        m_mainWindow->setPosition(std::min(m_winX, available.right() - width + 1),
+                                  std::min(m_winY, available.bottom() - height + 1));
     }
 }
 
@@ -143,6 +159,9 @@ void AppBackend::loadSettings() {
     if (m_directMode && !obj.contains("output_selection_saved")) m_selectedOutDevice.clear();
     if (obj.contains("in_device")) m_selectedInDevice = obj.value("in_device").toString();
     m_selectedSourceDevice = obj.value("system_audio_source").toString();
+    const QString material = obj.value("appearance_material").toString();
+    const bool hasSavedAppearance = isAppearanceMaterial(material);
+    if (hasSavedAppearance) m_appearanceMaterial = material;
 
     const QString geom = obj.value("window_geometry").toString();
     if (!geom.isEmpty()) {
@@ -153,7 +172,7 @@ void AppBackend::loadSettings() {
             bool okW = false, okH = false;
             int w = wh[0].toInt(&okW);
             int h = wh[1].toInt(&okH);
-            if (okW && okH && w >= 540 && h >= 400) {
+            if (okW && okH && (hasSavedAppearance || (w >= 860 && h >= 550))) {
                 m_winW = w;
                 m_winH = h;
             }
@@ -165,6 +184,7 @@ void AppBackend::loadSettings() {
             if (okX && okY) {
                 m_winX = x;
                 m_winY = y;
+                m_hasWindowPosition = true;
             }
         }
     }
@@ -173,14 +193,15 @@ void AppBackend::loadSettings() {
 void AppBackend::saveSettings() {
     if (m_screenshotMode) return;
 
-    QString geom = QStringLiteral("%1x%2").arg(m_winW).arg(m_winH);
-    if (m_mainWindow && m_mainWindow->isVisible()) {
+    if (m_mainWindow && m_mainWindow->visibility() == QWindow::Windowed) {
         m_winW = m_mainWindow->width();
         m_winH = m_mainWindow->height();
         m_winX = m_mainWindow->x();
         m_winY = m_mainWindow->y();
-        geom = QStringLiteral("%1x%2+%3+%4").arg(m_winW).arg(m_winH).arg(m_winX).arg(m_winY);
+        m_hasWindowPosition = true;
     }
+    QString geom = QStringLiteral("%1x%2").arg(m_winW).arg(m_winH);
+    if (m_hasWindowPosition) geom += QStringLiteral("+%1+%2").arg(m_winX).arg(m_winY);
 
     QJsonObject obj;
     obj["in_device"] = m_selectedInDevice;
@@ -196,11 +217,13 @@ void AppBackend::saveSettings() {
     obj["bass_boost"] = m_bassBoost;
     obj["show_tray_msg"] = m_showTrayMsg;
     obj["hotkeys_enabled"] = m_hotkeysEnabled;
+    obj["appearance_material"] = m_appearanceMaterial;
     obj["window_geometry"] = geom;
 
-    QFile f(settingsFilePath());
-    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        f.write(QJsonDocument(obj).toJson(QJsonDocument::Indented));
+    QSaveFile f(settingsFilePath());
+    const QByteArray contents = QJsonDocument(obj).toJson(QJsonDocument::Indented);
+    if (f.open(QIODevice::WriteOnly) && f.write(contents) == contents.size()) {
+        f.commit();
     }
 }
 
@@ -287,6 +310,13 @@ void AppBackend::setHotkeysEnabled(bool h) {
         m_winHelper->setHotkeysEnabled(!m_screenshotMode && h);
     }
     emit hotkeysEnabledChanged();
+    m_saveDebounce.start();
+}
+
+void AppBackend::setAppearanceMaterial(const QString& material) {
+    if (m_appearanceMaterial == material || !isAppearanceMaterial(material)) return;
+    m_appearanceMaterial = material;
+    emit appearanceMaterialChanged();
     m_saveDebounce.start();
 }
 

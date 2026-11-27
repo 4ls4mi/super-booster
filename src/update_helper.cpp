@@ -259,6 +259,7 @@ struct Handoff {
     std::wstring previousVersion;
     Handle scratchLock;
     bool ready = false;
+    bool background = false;
 
     bool registeredDirectoryMatches() const {
         auto current = openPath(localPath(registryString(L"InstallLocation")),
@@ -273,21 +274,23 @@ struct Handoff {
         auto app = openPath(installedApp, FILE_READ_ATTRIBUTES, readSharing, false);
         return app && registeredDirectoryMatches() &&
             pathEquals(finalPath(app.get()), installedApp) &&
-            static_cast<bool>(launch(installedApp, {}, installedDirectory, false));
+            static_cast<bool>(launch(installedApp, background ? L"--minimized" : L"",
+                                     installedDirectory, background));
     }
 
     int fail(const char* message, const wchar_t* caption, bool recover = false) const {
         if (scratchLock) writeMarker(scratch, L"update-error.txt", message);
         if (ready) {
             if (recover && registryString(L"DisplayVersion") == previousVersion) reopen();
-            MessageBoxW(nullptr, caption, L"Super Booster update", MB_OK | MB_ICONWARNING);
+            if (!background) MessageBoxW(nullptr, caption, L"Super Booster update", MB_OK | MB_ICONWARNING);
         }
         return 1;
     }
 };
 
-int performUpdate(wchar_t** arguments) {
+int performUpdate(wchar_t** arguments, bool background) {
     Handoff handoff;
+    handoff.background = background;
     const auto installer = localPath(arguments[3]);
     if (installer.empty()) return 1;
     const auto scratch = directoryOf(installer);
@@ -359,9 +362,21 @@ int performUpdate(wchar_t** arguments) {
                             L"The updater could not prepare the installation.");
     }
     handoff.ready = true;
-    if (WaitForSingleObject(parent.get(), appExitTimeoutMs) != WAIT_OBJECT_0) {
-        return handoff.fail("Super Booster did not finish closing.",
-                            L"Super Booster did not finish closing. Close it and try again.");
+    const auto cancelPath = childPath(handoff.scratch, L"update-cancel");
+    const ULONGLONG startedWaiting = GetTickCount64();
+    for (;;) {
+        const DWORD result = WaitForSingleObject(parent.get(), background ? 100 : appExitTimeoutMs);
+        if (result == WAIT_OBJECT_0) break;
+        if (result != WAIT_TIMEOUT || GetTickCount64() - startedWaiting >= appExitTimeoutMs) {
+            return handoff.fail("Super Booster did not finish closing.",
+                                L"Super Booster did not finish closing. Close it and try again.");
+        }
+        if (background) {
+            auto cancel = openPath(cancelPath, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_DELETE, false);
+            if (cancel && pathEquals(finalPath(cancel.get()), cancelPath)) {
+                return writeMarker(handoff.scratch, L"update-cancelled", "cancelled\n") ? 0 : 1;
+            }
+        }
     }
     const auto confirmPath = childPath(handoff.scratch, L"update-confirm");
     auto confirm = openPath(confirmPath, FILE_READ_ATTRIBUTES, FILE_SHARE_READ, false);
@@ -421,6 +436,7 @@ int performUpdate(wchar_t** arguments) {
         return handoff.fail("The update installed, but Super Booster could not be reopened.",
                             L"The update installed. Open Super Booster from the Start menu or its installation folder.");
     }
+    if (background) DeleteFileW(longPath(candidate).c_str());
     return 0;
 }
 
@@ -429,7 +445,9 @@ int performUpdate(wchar_t** arguments) {
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     int argc = 0;
     auto* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
-    const int result = argv && argc == 7 ? performUpdate(argv) : 1;
+    const bool background = argv && argc == 8 && std::wstring_view(argv[7]) == L"--background";
+    if (background) SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX | SEM_NOGPFAULTERRORBOX);
+    const int result = argv && (argc == 7 || background) ? performUpdate(argv, background) : 1;
     if (argv) LocalFree(argv);
     return result;
 }

@@ -14,16 +14,10 @@
 #include <QQuickWindow>
 #include <QTimer>
 
-#ifdef Q_OS_WIN
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#endif
-
 int main(int argc, char* argv[]) {
     QQuickStyle::setStyle(QStringLiteral("Basic"));
     QApplication app(argc, argv);
+    QQuickWindow::setDefaultAlphaBuffer(true);
     app.setApplicationName(QStringLiteral("Super Booster"));
     app.setApplicationVersion(QStringLiteral(SUPER_BOOSTER_VERSION));
     app.setOrganizationName(QStringLiteral("SuperBooster"));
@@ -75,42 +69,19 @@ int main(int argc, char* argv[]) {
     if (mainWindow) {
         if (screenshotMode) {
             mainWindow->setFlag(Qt::WindowDoesNotAcceptFocus, true);
-#ifdef Q_OS_WIN
-            mainWindow->create();
             winHelper.attachWindow(mainWindow, true);
-            HWND hwnd = reinterpret_cast<HWND>(mainWindow->winId());
-            if (hwnd) {
-                ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-                SetWindowPos(hwnd, HWND_BOTTOM, 0, 0, 0, 0,
-                             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-            }
-#else
             mainWindow->show();
-            winHelper.attachWindow(mainWindow, true);
-#endif
+            winHelper.placeBehindOtherWindows();
 
-            auto* pump = new QTimer(mainWindow);
-            pump->setInterval(16);
-            QObject::connect(pump, &QTimer::timeout, mainWindow, [mainWindow, &winHelper]() {
-                winHelper.placeBehindOtherWindows();
-                mainWindow->requestUpdate();
+            QTimer::singleShot(850, mainWindow, [mainWindow, screenshotPath, &app]() {
+                const QFileInfo output(screenshotPath);
+                QSaveFile file(screenshotPath);
+                const bool saved = output.dir().mkpath(QStringLiteral("."))
+                    && file.open(QIODevice::WriteOnly)
+                    && mainWindow->grabWindow().save(&file, "PNG")
+                    && file.commit();
+                app.exit(saved ? 0 : 1);
             });
-            pump->start();
-
-            QTimer::singleShot(15000, &app, [&app]() { app.exit(1); });
-            QObject::connect(mainWindow, &QQuickWindow::frameSwapped, mainWindow,
-                [mainWindow, pump, frames = 0, screenshotPath, &app]() mutable {
-                    if (++frames != 120) return;
-                    pump->stop();
-
-                    const QFileInfo output(screenshotPath);
-                    QSaveFile file(screenshotPath);
-                    const bool saved = output.dir().mkpath(QStringLiteral("."))
-                        && file.open(QIODevice::WriteOnly)
-                        && mainWindow->grabWindow().save(&file, "PNG")
-                        && file.commit();
-                    app.exit(saved ? 0 : 1);
-                });
         } else {
             winHelper.attachWindow(mainWindow, false);
             if (!startMinimized) {

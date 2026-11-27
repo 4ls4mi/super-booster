@@ -1,7 +1,10 @@
 #include "win_window_helper.h"
 
 #include <QCoreApplication>
+#include <QJSValue>
+#include <QtMath>
 #include <QQuickWindow>
+#include <QTimer>
 
 #ifdef Q_OS_WIN
 #ifndef NOMINMAX
@@ -16,6 +19,122 @@ namespace {
 constexpr int HOTKEY_VOL_UP = 0x5301;
 constexpr int HOTKEY_VOL_DOWN = 0x5302;
 constexpr int HOTKEY_TOGGLE = 0x5303;
+
+#ifdef Q_OS_WIN
+// The MinGW Windows SDK predates these DWM constants.
+constexpr DWORD DwmDarkMode = 20;              // DWMWA_USE_IMMERSIVE_DARK_MODE
+constexpr DWORD DwmCornerPreference = 33;      // DWMWA_WINDOW_CORNER_PREFERENCE
+constexpr DWORD DwmBorderColor = 34;           // DWMWA_BORDER_COLOR
+constexpr DWORD DwmSystemBackdrop = 38;       // DWMWA_SYSTEMBACKDROP_TYPE
+constexpr DWORD DwmNoCorners = 1;             // DWMWCP_DONOTROUND
+constexpr COLORREF DwmNoBorder = 0xfffffffe;  // DWMWA_COLOR_NONE
+constexpr int MicaBackdrop = 2;               // DWMSBT_MAINWINDOW
+constexpr int AcrylicBackdrop = 3;            // DWMSBT_TRANSIENTWINDOW
+constexpr wchar_t BackdropClass[] = L"SuperBooster.ShardBackdrop";
+
+void removeDwmDecorations(HWND hwnd) {
+    DwmSetWindowAttribute(hwnd, DwmCornerPreference, &DwmNoCorners, sizeof(DwmNoCorners));
+    DwmSetWindowAttribute(hwnd, DwmBorderColor, &DwmNoBorder, sizeof(DwmNoBorder));
+}
+
+LRESULT CALLBACK backdropWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
+    switch (message) {
+    case WM_NCHITTEST:
+        return HTTRANSPARENT;
+    case WM_MOUSEACTIVATE:
+        return MA_NOACTIVATE;
+    default:
+        return DefWindowProcW(hwnd, message, wParam, lParam);
+    }
+}
+
+bool registerBackdropClass() {
+    WNDCLASSW windowClass{};
+    windowClass.lpfnWndProc = backdropWindowProc;
+    windowClass.hInstance = GetModuleHandleW(nullptr);
+    windowClass.hbrBackground = static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
+    windowClass.lpszClassName = BackdropClass;
+    return RegisterClassW(&windowClass) != 0 || GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
+}
+
+bool systemTransparencyEnabled() {
+    BOOL composition = FALSE;
+    if (FAILED(DwmIsCompositionEnabled(&composition)) || !composition) return false;
+
+    HIGHCONTRASTW highContrast{sizeof(HIGHCONTRASTW), 0, nullptr};
+    if (SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(highContrast), &highContrast, 0)
+            && (highContrast.dwFlags & HCF_HIGHCONTRASTON)) {
+        return false;
+    }
+
+    DWORD enabled = 1;
+    DWORD size = sizeof(enabled);
+    const auto preference = RegGetValueW(HKEY_CURRENT_USER,
+        LR"(Software\Microsoft\Windows\CurrentVersion\Themes\Personalize)",
+        L"EnableTransparency", RRF_RT_REG_DWORD, nullptr, &enabled, &size);
+    return preference != ERROR_SUCCESS || enabled != 0;
+}
+
+bool applySystemBackdrop(HWND hwnd, int material) {
+    const MARGINS wholeClient{-1, -1, -1, -1};
+    return SUCCEEDED(DwmSetWindowAttribute(hwnd, DwmSystemBackdrop, &material, sizeof(material)))
+        && SUCCEEDED(DwmExtendFrameIntoClientArea(hwnd, &wholeClient));
+}
+
+bool applyLegacyBlur(HWND hwnd, bool acrylic) {
+    // The legacy accent policy is only used for classic blur and pre-22621 Windows.
+    constexpr int AccentPolicyAttribute = 19;
+    struct AccentPolicy { int state; int flags; DWORD color; int animation; };
+    struct CompositionData { int attribute; void* data; UINT size; };
+    using SetCompositionAttribute = BOOL (WINAPI*)(HWND, const CompositionData*);
+    static const auto apply = reinterpret_cast<SetCompositionAttribute>(GetProcAddress(
+        GetModuleHandleW(L"user32.dll"), "SetWindowCompositionAttribute"));
+    if (!apply) return false;
+
+    constexpr int AccentBlur = 3;
+    constexpr int AccentAcrylic = 4;
+    AccentPolicy policy{acrylic ? AccentAcrylic : AccentBlur, 0, acrylic ? 0x48251a10UL : 0UL, 0};
+    const CompositionData composition{AccentPolicyAttribute, &policy, sizeof(policy)};
+    return apply(hwnd, &composition);
+}
+
+HRGN shardRegion(const QList<QPolygonF>& shards, qreal scale, int fringe = 0) {
+    HRGN combined = CreateRectRgn(0, 0, 0, 0);
+    if (!combined) return nullptr;
+    for (const auto& shard : shards) {
+        QList<POINT> points;
+        points.reserve(shard.size());
+        for (const auto& point : shard) {
+            points.append(POINT{qRound(point.x() * scale), qRound(point.y() * scale)});
+        }
+        HRGN polygon = CreatePolygonRgn(points.constData(), static_cast<int>(points.size()), WINDING);
+        const bool valid = polygon && CombineRgn(combined, combined, polygon, RGN_OR) != ERROR;
+        if (polygon) DeleteObject(polygon);
+        if (!valid) {
+            DeleteObject(combined);
+            return nullptr;
+        }
+    }
+
+    // Preserve the antialiased Qt outline while making the desktop gaps click-through.
+    if (fringe) {
+        HRGN outline = CreateRectRgn(0, 0, 0, 0);
+        if (outline) {
+            CombineRgn(outline, combined, nullptr, RGN_COPY);
+            OffsetRgn(outline, -fringe, 0);
+            CombineRgn(combined, combined, outline, RGN_OR);
+            OffsetRgn(outline, fringe * 2, 0);
+            CombineRgn(combined, combined, outline, RGN_OR);
+            OffsetRgn(outline, -fringe, -fringe);
+            CombineRgn(combined, combined, outline, RGN_OR);
+            OffsetRgn(outline, 0, fringe * 2);
+            CombineRgn(combined, combined, outline, RGN_OR);
+            DeleteObject(outline);
+        }
+    }
+    return combined;
+}
+#endif
 }
 
 WinWindowHelper::WinWindowHelper(QObject* parent) : QObject(parent) {
@@ -23,6 +142,7 @@ WinWindowHelper::WinWindowHelper(QObject* parent) : QObject(parent) {
 }
 
 WinWindowHelper::~WinWindowHelper() {
+    destroyBackdrop();
     unregisterGlobalHotkeys();
     if (QCoreApplication::instance()) {
         QCoreApplication::instance()->removeNativeEventFilter(this);
@@ -30,8 +150,15 @@ WinWindowHelper::~WinWindowHelper() {
 }
 
 void WinWindowHelper::attachWindow(QQuickWindow* window, bool screenshotNoActivate) {
+    if (m_window) {
+        unregisterGlobalHotkeys();
+        disconnect(m_window, nullptr, this, nullptr);
+    }
+    destroyBackdrop();
     m_window = window;
     m_hwnd = 0;
+    m_backdropUnavailable = false;
+    m_inputRegionScale = 0;
     if (!m_window) {
         return;
     }
@@ -50,6 +177,18 @@ void WinWindowHelper::attachWindow(QQuickWindow* window, bool screenshotNoActiva
         if (m_hotkeysEnabled) {
             registerGlobalHotkeys();
         }
+        connect(m_window, &QWindow::visibilityChanged, this, [this] { syncBackdrop(); });
+        connect(m_window, &QWindow::screenChanged, this, [this] {
+            syncInputRegion();
+            syncBackdrop();
+        });
+        connect(m_window, &QObject::destroyed, this, [this] {
+            m_hwnd = 0;
+            m_hotkeysRegistered = false;
+            destroyBackdrop();
+        });
+        syncInputRegion();
+        syncBackdrop();
     }
 #else
     Q_UNUSED(screenshotNoActivate)
@@ -61,14 +200,13 @@ void WinWindowHelper::applyDwmStyling(quintptr hwndPtr) {
     HWND hwnd = reinterpret_cast<HWND>(hwndPtr);
     if (!hwnd) return;
 
-    // Enable Windows 11 rounded corners and subtle DWM frame shadow on frameless window
-    const DWORD cornerPref = 2; // DWMWCP_ROUND
-    DwmSetWindowAttribute(hwnd, 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */, &cornerPref, sizeof(cornerPref));
-
+    // The transparent Qt window has no rectangular frame or system backdrop.
+    removeDwmDecorations(hwnd);
     const BOOL darkMode = TRUE;
-    DwmSetWindowAttribute(hwnd, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, &darkMode, sizeof(darkMode));
-
-    const MARGINS margins{1, 1, 1, 1};
+    DwmSetWindowAttribute(hwnd, DwmDarkMode, &darkMode, sizeof(darkMode));
+    const DWMNCRENDERINGPOLICY noFrame = DWMNCRP_DISABLED;
+    DwmSetWindowAttribute(hwnd, DWMWA_NCRENDERING_POLICY, &noFrame, sizeof(noFrame));
+    const MARGINS margins{0, 0, 0, 0};
     DwmExtendFrameIntoClientArea(hwnd, &margins);
 
     // Ensure WS_THICKFRAME is present so Win32 edge resize + Aero Snap work smoothly
@@ -79,6 +217,136 @@ void WinWindowHelper::applyDwmStyling(quintptr hwndPtr) {
                  SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 #else
     Q_UNUSED(hwndPtr)
+#endif
+}
+
+void WinWindowHelper::setShardGeometry(const QVariantList& polygons, const QString& material) {
+    QList<QPolygonF> shards;
+    for (auto value : polygons) {
+        if (value.metaType().id() == qMetaTypeId<QJSValue>()) {
+            value = value.value<QJSValue>().toVariant();
+        }
+        QPolygonF polygon;
+        for (const auto& vertex : value.toList()) {
+            if (!vertex.canConvert<QPointF>()) continue;
+            const auto point = vertex.toPointF();
+            if (qIsFinite(point.x()) && qIsFinite(point.y())) polygon.append(point);
+        }
+        if (polygon.size() >= 3) shards.append(polygon);
+    }
+
+    Backdrop next = Backdrop::None;
+    const auto name = material.toLower();
+    if (name == QLatin1String("acrylic") || name == QLatin1String("frosted")) {
+        next = Backdrop::Acrylic;
+    } else if (name == QLatin1String("mica")) {
+        next = Backdrop::Mica;
+    } else if (name == QLatin1String("blurred")) {
+        next = Backdrop::Blur;
+    }
+
+    if (m_backdrop != next) {
+        destroyBackdrop();
+        m_backdrop = next;
+        m_backdropUnavailable = false;
+    }
+    if (m_shardPolygons != shards) {
+        m_shardPolygons = shards;
+        m_backdropScale = 0;
+        m_inputRegionScale = 0;
+    }
+    syncInputRegion();
+    syncBackdrop();
+}
+
+void WinWindowHelper::syncInputRegion() {
+#ifdef Q_OS_WIN
+    const auto main = reinterpret_cast<HWND>(m_hwnd);
+    if (!main || m_shardPolygons.isEmpty()) return;
+    const qreal scale = m_window->devicePixelRatio();
+    if (m_inputRegionScale == scale) return;
+
+    HRGN region = shardRegion(m_shardPolygons, scale, qCeil(1.5 * scale));
+    if (!region) return;
+    if (SetWindowRgn(main, region, TRUE)) {
+        m_inputRegionScale = scale;
+    } else {
+        DeleteObject(region);
+    }
+#endif
+}
+
+bool WinWindowHelper::createBackdrop() {
+#ifdef Q_OS_WIN
+    if (!systemTransparencyEnabled() || !registerBackdropClass()) return false;
+
+    const auto instance = GetModuleHandleW(nullptr);
+    HWND backdrop = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT,
+        BackdropClass, L"", WS_POPUP, 0, 0, 0, 0, nullptr, nullptr, instance, nullptr);
+    if (!backdrop) return false;
+
+    m_backdropHwnd = reinterpret_cast<quintptr>(backdrop);
+    removeDwmDecorations(backdrop);
+    const BOOL darkMode = TRUE;
+    DwmSetWindowAttribute(backdrop, DwmDarkMode, &darkMode, sizeof(darkMode));
+    DwmSetWindowAttribute(backdrop, DWMWA_EXCLUDED_FROM_PEEK, &darkMode, sizeof(darkMode));
+
+    bool applied = false;
+    if (m_backdrop == Backdrop::Mica) {
+        applied = applySystemBackdrop(backdrop, MicaBackdrop);
+    } else if (m_backdrop == Backdrop::Acrylic) {
+        applied = applySystemBackdrop(backdrop, AcrylicBackdrop) || applyLegacyBlur(backdrop, true);
+    } else if (m_backdrop == Backdrop::Blur) {
+        applied = applyLegacyBlur(backdrop, false) || applySystemBackdrop(backdrop, AcrylicBackdrop);
+    }
+    if (!applied) destroyBackdrop();
+    return applied;
+#else
+    return false;
+#endif
+}
+
+void WinWindowHelper::destroyBackdrop() {
+#ifdef Q_OS_WIN
+    if (m_backdropHwnd) DestroyWindow(reinterpret_cast<HWND>(m_backdropHwnd));
+#endif
+    m_backdropHwnd = 0;
+    m_backdropScale = 0;
+}
+
+void WinWindowHelper::syncBackdrop() {
+#ifdef Q_OS_WIN
+    const auto main = reinterpret_cast<HWND>(m_hwnd);
+    if (!main || m_backdrop == Backdrop::None || m_shardPolygons.isEmpty()
+            || !IsWindowVisible(main) || IsIconic(main)) {
+        if (m_backdropHwnd) ShowWindow(reinterpret_cast<HWND>(m_backdropHwnd), SW_HIDE);
+        return;
+    }
+    if (m_backdropUnavailable) return;
+    if (!m_backdropHwnd && !createBackdrop()) {
+        m_backdropUnavailable = true;
+        return;
+    }
+
+    const auto backdrop = reinterpret_cast<HWND>(m_backdropHwnd);
+    const qreal scale = m_window->devicePixelRatio();
+    if (m_backdropScale != scale) {
+        HRGN region = shardRegion(m_shardPolygons, scale);
+        if (!region || !SetWindowRgn(backdrop, region, TRUE)) {
+            if (region) DeleteObject(region);
+            destroyBackdrop();
+            return;
+        }
+        // Windows owns the region after a successful SetWindowRgn.
+        m_backdropScale = scale;
+    }
+
+    POINT origin{};
+    RECT client{};
+    if (ClientToScreen(main, &origin) && GetClientRect(main, &client)) {
+        SetWindowPos(backdrop, main, origin.x, origin.y, client.right, client.bottom,
+                     SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOOWNERZORDER);
+    }
 #endif
 }
 
@@ -191,6 +459,22 @@ bool WinWindowHelper::nativeEventFilter(const QByteArray& eventType, void* messa
 
     if (!m_window || !m_hwnd || msg->hwnd != reinterpret_cast<HWND>(m_hwnd)) {
         return false;
+    }
+
+    if (msg->message == WM_WINDOWPOSCHANGED) {
+        syncBackdrop();
+    } else if (msg->message == WM_DPICHANGED) {
+        QTimer::singleShot(0, this, [this] {
+            syncInputRegion();
+            syncBackdrop();
+        });
+    } else if (m_backdrop != Backdrop::None && (msg->message == WM_DWMCOMPOSITIONCHANGED
+               || msg->message == WM_SETTINGCHANGE || msg->message == WM_THEMECHANGED)) {
+        QTimer::singleShot(0, this, [this] {
+            destroyBackdrop();
+            m_backdropUnavailable = false;
+            syncBackdrop();
+        });
     }
 
     if (msg->message == WM_NCCALCSIZE && msg->wParam == TRUE) {

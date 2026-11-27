@@ -45,6 +45,7 @@ class AppBackend : public QObject {
     Q_PROPERTY(QVariantList spectrumBands READ spectrumBands NOTIFY metersChanged)
     Q_PROPERTY(double masterVolume READ masterVolume NOTIFY masterVolumeChanged)
     Q_PROPERTY(bool startupNoticeVisible READ startupNoticeVisible NOTIFY startupNoticeVisibleChanged)
+    Q_PROPERTY(QString appearanceMaterial READ appearanceMaterial WRITE setAppearanceMaterial NOTIFY appearanceMaterialChanged)
 
 public:
     explicit AppBackend(WinWindowHelper* winHelper, bool screenshotMode, QObject* parent = nullptr);
@@ -106,6 +107,8 @@ public:
     QVariantList spectrumBands() const { return m_spectrum; }
     double masterVolume() const { return m_masterVolume; }
     bool startupNoticeVisible() const { return m_startupNoticeVisible; }
+    QString appearanceMaterial() const { return m_appearanceMaterial; }
+    void setAppearanceMaterial(const QString& material);
 
     Q_INVOKABLE void toggleEngine();
     Q_INVOKABLE bool stopEngine();
@@ -144,6 +147,7 @@ signals:
     void metersChanged();
     void masterVolumeChanged();
     void startupNoticeVisibleChanged();
+    void appearanceMaterialChanged();
     void updateNotificationClicked();
 
 private slots:
@@ -183,6 +187,7 @@ private:
     bool m_showTrayMsg = true;
     bool m_hotkeysEnabled = true;
     bool m_startupNoticeVisible = false;
+    QString m_appearanceMaterial = QStringLiteral("clear");
 
     QString m_selectedOutDevice;
     QString m_activeDirectOutput;
@@ -207,8 +212,9 @@ private:
     QTimer m_meterTimer;
     QTimer m_sessionTimer;
     QTimer m_saveDebounce;
+    bool m_hasWindowPosition = false;
     int m_winX = -1;
     int m_winY = -1;
-    int m_winW = 640;
-    int m_winH = 480;
+    int m_winW = 1020;
+    int m_winH = 610;
 };
